@@ -6,6 +6,8 @@ interface UseApiQueryOptions<T> {
   enabled?: boolean;
   errorToast?: string;
   initialData?: T;
+  /** Re-run the fetcher whenever any value in this list changes. */
+  deps?: unknown[];
 }
 
 interface UseApiQueryResult<T> {
@@ -19,7 +21,7 @@ export function useApiQuery<T>(
   fetcher: () => Promise<T>,
   options: UseApiQueryOptions<T> = {},
 ): UseApiQueryResult<T> {
-  const { enabled = true, errorToast, initialData } = options;
+  const { enabled = true, errorToast, initialData, deps = [] } = options;
 
   const [data, setData] = useState<T | undefined>(initialData);
   const [isLoading, setIsLoading] = useState(enabled);
@@ -50,7 +52,8 @@ export function useApiQuery<T>(
 
   useEffect(() => {
     if (enabled) void run();
-  }, [enabled, run]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, run, ...deps]);
 
   return { data, isLoading, error, refetch: run };
 }

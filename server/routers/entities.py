@@ -4,7 +4,7 @@ from typing import Any, Literal, Optional
 
 from auth import require_admin, verify_auth
 from errors import upstream_error
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from schemas import MessageResponse
 from server_state import get_memory_instance
@@ -13,8 +13,13 @@ router = APIRouter(prefix="/entities", tags=["entities"])
 
 SCAN_LIMIT = 10_000
 
-EntityType = Literal["user", "agent", "run"]
-TYPE_TO_FIELD: dict[EntityType, str] = {"user": "user_id", "agent": "agent_id", "run": "run_id"}
+EntityType = Literal["user", "agent", "run", "app"]
+TYPE_TO_FIELD: dict[EntityType, str] = {
+    "user": "user_id",
+    "agent": "agent_id",
+    "run": "run_id",
+    "app": "app_id",
+}
 
 
 class Entity(BaseModel):
@@ -69,6 +74,10 @@ def list_entities(_auth=Depends(verify_auth)):
 
 @router.delete("/{entity_type}/{entity_id}", response_model=MessageResponse)
 def delete_entity(entity_type: EntityType, entity_id: str, _auth=Depends(require_admin)):
+    if entity_type == "app":
+        # The SDK's delete_all only accepts user_id/agent_id/run_id; app_id is a
+        # best-effort, read-only entity dimension with no bulk-delete support.
+        raise HTTPException(status_code=400, detail="Deleting application entities is not supported")
     try:
         get_memory_instance().delete_all(**{TYPE_TO_FIELD[entity_type]: entity_id})
     except Exception:

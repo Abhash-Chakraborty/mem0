@@ -39,7 +39,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --chown=nextjs:nodejs entrypoint.sh /home/nextjs/entrypoint.sh
-RUN chmod +x /home/nextjs/entrypoint.sh
+RUN sed -i 's/\r$//' /home/nextjs/entrypoint.sh && chmod +x /home/nextjs/entrypoint.sh
 
 USER nextjs
 

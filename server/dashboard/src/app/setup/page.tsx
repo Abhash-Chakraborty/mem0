@@ -440,7 +440,7 @@ export default function SetupPage() {
                       id="setup-llm-model"
                       value={llmModel}
                       onChange={(e) => setLlmModel(e.target.value)}
-                      placeholder="gpt-4.1-nano-2025-04-14"
+                      placeholder="gpt-5.4-nano"
                       className="font-mono text-sm"
                     />
                   </div>

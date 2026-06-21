@@ -18,7 +18,6 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { UpgradeBanner } from "@/components/self-hosted/upgrade-banner";
 import { toast } from "@/components/ui/use-toast";
 import { getErrorMessage } from "@/lib/error-message";
 import { api } from "@/utils/api";
@@ -95,16 +94,6 @@ export default function MemoriesPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold font-fustat">Memories</h1>
-
-      {memories.length >= 1000 && (
-        <UpgradeBanner
-          id="memories-1k"
-          message="1,000+ memories stored. Categories can help organize them."
-          ctaLabel="Explore Cloud"
-          ctaUrl="https://app.mem0.ai?utm_source=oss&utm_medium=dashboard-memories"
-          variant="cloud"
-        />
-      )}
 
       <div className="flex gap-3">
         <Input

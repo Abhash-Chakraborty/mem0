@@ -1,0 +1,127 @@
+name: Upstream Sync
+
+# Fetches upstream mem0ai/mem0 and rebases it onto this fork's abhash-main on an
+# integration branch, then raises a PR. A clean rebase opens a normal PR; a
+# conflicting rebase opens a DRAFT PR whose branch carries the upstream changes
+# with conflict markers committed, plus a comment listing the conflicted files.
+# It never silently auto-resolves — you resolve conflicts in the PR.
+
+on:
+  schedule:
+    # Mondays at 04:17 UTC (off the :00 mark to avoid the scheduler stampede).
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: https://github.com/mem0ai/mem0.git
+  UPSTREAM_BRANCH: main
+  BASE_BRANCH: abhash-main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork (full history)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "abhash-upstream-sync[bot]"
+          git config user.email "actions@github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "$UPSTREAM_REPO" || git remote set-url upstream "$UPSTREAM_REPO"
+          git fetch upstream "$UPSTREAM_BRANCH"
+
+      - name: Rebase onto upstream and open PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          DATE="$(date +%Y%m%d)"
+          BRANCH="integration/upstream-sync-${DATE}"
+
+          # Skip if there is nothing new upstream.
+          AHEAD="$(git rev-list --count ${BASE_BRANCH}..upstream/${UPSTREAM_BRANCH})"
+          if [ "$AHEAD" = "0" ]; then
+            echo "No new upstream commits. Nothing to sync."
+            exit 0
+          fi
+          echo "Upstream is $AHEAD commit(s) ahead of ${BASE_BRANCH}."
+
+          # If a PR for today's branch already exists, don't duplicate it.
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "Branch $BRANCH already exists on origin; skipping."
+            exit 0
+          fi
+
+          git checkout -b "$BRANCH" "${BASE_BRANCH}"
+
+          # Primary path: rebase the fork's customizations onto upstream.
+          if git rebase "upstream/${UPSTREAM_BRANCH}"; then
+            echo "Clean rebase."
+            git push origin "$BRANCH"
+            gh pr create \
+              --base "${BASE_BRANCH}" \
+              --head "$BRANCH" \
+              --title "sync upstream ${DATE}" \
+              --body "Automated upstream sync. Rebased \`${BASE_BRANCH}\` onto \`upstream/${UPSTREAM_BRANCH}\` cleanly (${AHEAD} upstream commit(s)). CI must pass before merge."
+            exit 0
+          fi
+
+          # Conflict path: abort the rebase and instead produce a branch that
+          # carries the upstream changes with conflict markers committed, so the
+          # conflicts are reviewable and resolvable inside a draft PR.
+          echo "Rebase hit conflicts; falling back to a conflict-marked merge branch."
+          git rebase --abort
+          git checkout -B "$BRANCH" "${BASE_BRANCH}"
+
+          set +e
+          git merge --no-commit --no-ff "upstream/${UPSTREAM_BRANCH}"
+          CONFLICTS="$(git diff --name-only --diff-filter=U)"
+          set -e
+
+          git add -A
+          git commit -m "merge upstream ${DATE} (CONFLICTS — manual resolution required)"
+          git push origin "$BRANCH"
+
+          BODY_FILE="$(mktemp)"
+          {
+            echo "Automated upstream sync hit merge conflicts during rebase."
+            echo ""
+            echo "This DRAFT PR's branch merges \`upstream/${UPSTREAM_BRANCH}\` with **conflict markers committed**. Resolve them locally, then mark ready for review:"
+            echo ""
+            echo '```bash'
+            echo "git fetch origin && git checkout ${BRANCH}"
+            echo "# search for <<<<<<< / >>>>>>> markers, resolve, then:"
+            echo "git add -A && git commit && git push"
+            echo '```'
+            echo ""
+            echo "### Conflicted files"
+            if [ -n "$CONFLICTS" ]; then
+              echo "$CONFLICTS" | sed 's/^/- `/; s/$/`/'
+            else
+              echo "_None reported (review the merge commit)._"
+            fi
+          } > "$BODY_FILE"
+
+          gh pr create \
+            --base "${BASE_BRANCH}" \
+            --head "$BRANCH" \
+            --title "sync upstream ${DATE} (conflicts)" \
+            --body-file "$BODY_FILE" \
+            --draft

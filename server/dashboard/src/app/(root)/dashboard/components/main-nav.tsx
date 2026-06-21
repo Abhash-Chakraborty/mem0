@@ -10,6 +10,7 @@ import {
   GalleryVerticalEnd,
   KeyRound,
   Settings,
+  Share2,
   Tags,
   Users,
   WebhookIcon,
@@ -17,7 +18,6 @@ import {
 } from "lucide-react";
 import { useSelector } from "react-redux";
 import { RootState } from "@/store/store";
-import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
@@ -44,7 +44,7 @@ export function MainNav({
   const isSidebarCollapsed = useSelector(
     (state: RootState) => state.layout.isSidebarCollapsed,
   );
-  const [isCloudOpen, setIsCloudOpen] = React.useState(true);
+  const [isToolsOpen, setIsToolsOpen] = React.useState(true);
 
   return (
     <Sidebar
@@ -81,6 +81,12 @@ export function MainNav({
                     icon: Users,
                     active: pathname === "/dashboard/entities",
                   },
+                  {
+                    title: "Graph",
+                    url: "/dashboard/graph",
+                    icon: Share2,
+                    active: pathname === "/dashboard/graph",
+                  },
                 ].map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
@@ -111,18 +117,18 @@ export function MainNav({
               )}
 
               <Collapsible
-                open={isCloudOpen}
-                onOpenChange={setIsCloudOpen}
+                open={isToolsOpen}
+                onOpenChange={setIsToolsOpen}
                 className="flex flex-col gap-0"
               >
                 {!isSidebarCollapsed && (
                   <CollapsibleTrigger asChild>
                     <SidebarGroupLabel className="cursor-pointer mb-0">
-                      CLOUD FEATURES
+                      SELF-HOSTED TOOLS
                       <ChevronDown
                         className={cn(
                           "size-3 transition-transform duration-200",
-                          isCloudOpen ? "" : "-rotate-90",
+                          isToolsOpen ? "" : "-rotate-90",
                         )}
                       />
                     </SidebarGroupLabel>
@@ -168,17 +174,7 @@ export function MainNav({
                           )}
                         >
                           <item.icon className="size-4 shrink-0" />
-                          {!isSidebarCollapsed && (
-                            <>
-                              <span>{item.title}</span>
-                              <Badge
-                                variant="outline"
-                                className="ml-auto text-memGold-600 border-memGold-300 typo-caption-sm px-1.5 py-0"
-                              >
-                                PRO
-                              </Badge>
-                            </>
-                          )}
+                          {!isSidebarCollapsed && <span>{item.title}</span>}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

@@ -13,7 +13,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
-import { UpgradeBanner } from "@/components/self-hosted/upgrade-banner";
 import { getErrorMessage } from "@/lib/error-message";
 import { api } from "@/utils/api";
 import { MEMORY_ENDPOINTS } from "@/utils/api-endpoints";
@@ -146,7 +145,7 @@ export default function ConfigurationPage() {
             <div className="space-y-1">
               <Label className="text-xs">Model</Label>
               <Input
-                placeholder="gpt-4.1-nano-2025-04-14"
+                placeholder="gpt-5.4-nano"
                 value={llmModel}
                 onChange={(e) => setLlmModel(e.target.value)}
                 disabled={!isAdmin}
@@ -223,14 +222,6 @@ export default function ConfigurationPage() {
           {isSaving ? "Saving..." : "Save Configuration"}
         </Button>
       )}
-
-      <UpgradeBanner
-        id="config-sso"
-        message="Looking for SSO / SAML? Available in Enterprise."
-        ctaLabel="Contact sales"
-        ctaUrl="https://app.mem0.ai/enterprise?utm_source=oss&utm_medium=dashboard-configuration-sso"
-        variant="enterprise"
-      />
     </div>
   );
 }

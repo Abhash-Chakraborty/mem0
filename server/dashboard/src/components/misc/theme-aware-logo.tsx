@@ -26,5 +26,7 @@ export default function ThemeAwareLogo({
   const logoSrc =
     currentTheme === "dark" ? "/images/dark.svg" : "/images/light.svg";
 
-  return <Image src={logoSrc} alt="Mem0.ai" width={width} height={height} />;
+  return (
+    <Image src={logoSrc} alt="Abhash Memory" width={width} height={height} />
+  );
 }

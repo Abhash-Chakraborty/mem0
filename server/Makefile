@@ -1,8 +1,9 @@
-.PHONY: up down clean logs seed wait-api wait-dashboard bootstrap health build run_local reset-admin-password prune-logs
+.PHONY: up down clean logs seed wait-api wait-dashboard bootstrap health build run_local reset-admin-password prune-logs prod-pull prod-up prod-down prod-logs
 
 OUTPUT ?= text
 API_URL ?= http://localhost:8888
 DASHBOARD_URL ?= http://localhost:3000
+PROD_COMPOSE = docker compose --env-file .env.production -f docker-compose.prod.yaml
 
 up:
 	@for port in 3000 8888; do \
@@ -54,6 +55,18 @@ reset-admin-password:
 
 prune-logs:
 	@docker compose exec -T -e REQUEST_LOG_RETENTION_DAYS="$(REQUEST_LOG_RETENTION_DAYS)" -e PYTHONPATH=/app mem0 python scripts/prune_request_logs.py
+
+prod-pull:
+	$(PROD_COMPOSE) pull
+
+prod-up:
+	$(PROD_COMPOSE) up -d
+
+prod-down:
+	$(PROD_COMPOSE) down
+
+prod-logs:
+	$(PROD_COMPOSE) logs -f
 
 build:
 	docker build -t mem0-api-server .

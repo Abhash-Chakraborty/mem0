@@ -1,6 +1,13 @@
-node_modules
-.next
+.env
 .env.local
 .env.example
-.env
+.env.production
+.next/
+node_modules/
 .storybook
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+Dockerfile
+README.md
