@@ -33,6 +33,10 @@ export const ENTITY_ENDPOINTS = {
     `/entities/${type}/${encodeURIComponent(id)}`,
 } as const;
 
+export const GRAPH_ENDPOINTS = {
+  BASE: "/graph",
+} as const;
+
 export const CATEGORY_ENDPOINTS = {
   BASE: "/categories",
   MEMORIES: "/categories/memories",

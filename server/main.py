@@ -27,6 +27,7 @@ from routers import analytics as analytics_router
 from routers import categories as categories_router
 from routers import entities as entities_router
 from routers import export as export_router
+from routers import graph as graph_router
 from routers import requests as requests_router
 from routers import webhooks as webhooks_router
 from schemas import MessageResponse
@@ -172,6 +173,7 @@ app.add_middleware(
 app.include_router(auth_router.router)
 app.include_router(api_keys_router.router)
 app.include_router(entities_router.router)
+app.include_router(graph_router.router)
 app.include_router(requests_router.router)
 app.include_router(categories_router.router)
 app.include_router(webhooks_router.router)

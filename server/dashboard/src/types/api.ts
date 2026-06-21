@@ -36,7 +36,7 @@ export interface ApiRequestLog {
   auth_type: string;
 }
 
-export type EntityType = "user" | "agent" | "run";
+export type EntityType = "user" | "agent" | "run" | "app";
 
 export interface Entity {
   id: string;
@@ -44,6 +44,25 @@ export interface Entity {
   total_memories: number;
   created_at: string | null;
   updated_at: string | null;
+}
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: string;
+  memories: number;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+  relationship: string;
+  weight: number;
+}
+
+export interface GraphResponse {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }
 
 export interface Category {

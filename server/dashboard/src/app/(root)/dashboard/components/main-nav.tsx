@@ -10,6 +10,7 @@ import {
   GalleryVerticalEnd,
   KeyRound,
   Settings,
+  Share2,
   Tags,
   Users,
   WebhookIcon,
@@ -79,6 +80,12 @@ export function MainNav({
                     url: "/dashboard/entities",
                     icon: Users,
                     active: pathname === "/dashboard/entities",
+                  },
+                  {
+                    title: "Graph",
+                    url: "/dashboard/graph",
+                    icon: Share2,
+                    active: pathname === "/dashboard/graph",
                   },
                 ].map((item) => (
                   <SidebarMenuItem key={item.title}>
