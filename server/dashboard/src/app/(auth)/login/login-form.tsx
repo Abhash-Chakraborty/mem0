@@ -78,14 +78,14 @@ export default function LoginForm() {
                     ? "/images/logos/logo-light.png"
                     : "/images/logos/logo-dark.png"
                 }
-                alt="Mem0"
+                alt="Abhash Memory"
                 width={41}
                 height={41}
               />
             )}
           </div>
           <h1 className="text-2xl font-semibold text-onSurface-default-primary text-center mb-6 font-fustat">
-            Sign in to Mem0
+            Sign in to Abhash Memory
           </h1>
           <div className="flex flex-col gap-4 border p-8 border-memBorder-primary rounded-xl">
             {error && (
@@ -177,13 +177,15 @@ export default function LoginForm() {
         <div className="relative z-10 flex w-full max-w-[564px] flex-col items-center gap-20 text-center text-white">
           <div className="w-full space-y-5">
             <p className="typo-h3 text-white">
-              &quot;Mem0 allowed us to unlock true personalized tutoring for
-              every student, and it took us just a weekend to integrate.&quot;
+              &quot;Private memory for Abhash&apos;s agents, running on
+              Abhash&apos;s own infrastructure.&quot;
             </p>
             <div className="flex flex-col items-center gap-[7px]">
               <div className="flex flex-col items-center gap-1">
-                <p className="typo-body-sm text-white">Michael Tong</p>
-                <p className="typo-body-xs text-white">CTO, RevisionDojo</p>
+                <p className="typo-body-sm text-white">Abhash Memory</p>
+                <p className="typo-body-xs text-white">
+                  Personal self-hosted fork
+                </p>
               </div>
               <Image
                 src="/images/micheal.png"
@@ -195,7 +197,9 @@ export default function LoginForm() {
             </div>
           </div>
           <div className="flex w-full flex-col items-center gap-3">
-            <p className="typo-body text-white">Trusted by 100k+ Developers</p>
+            <p className="typo-body text-white">
+              Personal memory layer for private agents
+            </p>
             <div className="flex items-center justify-center gap-8 text-white">
               <div className="h-6 shrink-0">
                 <Image

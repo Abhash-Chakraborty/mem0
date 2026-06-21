@@ -35,7 +35,7 @@ export default function NavWrapper() {
   );
   const { user, logout } = useAuth();
 
-  const instanceName = process.env.NEXT_PUBLIC_INSTANCE_NAME || "Mem0";
+  const instanceName = process.env.NEXT_PUBLIC_INSTANCE_NAME || "Abhash Memory";
 
   const handleToggle = useCallback(() => {
     dispatch(toggleSidebar());

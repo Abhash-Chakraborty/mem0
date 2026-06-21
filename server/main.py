@@ -19,13 +19,16 @@ from errors import (
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
-from models import RequestLog, User
 from pydantic import BaseModel, Field
 from rate_limit import limiter
 from routers import api_keys as api_keys_router
 from routers import auth as auth_router
+from routers import analytics as analytics_router
+from routers import categories as categories_router
 from routers import entities as entities_router
+from routers import export as export_router
 from routers import requests as requests_router
+from routers import webhooks as webhooks_router
 from schemas import MessageResponse
 from server_state import (
     get_current_config,
@@ -36,7 +39,9 @@ from server_state import (
 )
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import func, select
+from feature_services import classify_memory, enqueue_webhook_event, process_due_webhooks
+from models import MemoryCategory, RequestLog, User
+from sqlalchemy import delete, func, select
 
 load_dotenv()
 
@@ -112,7 +117,7 @@ POSTGRES_COLLECTION_NAME = os.environ.get("POSTGRES_COLLECTION_NAME", "memories"
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 HISTORY_DB_PATH = os.environ.get("HISTORY_DB_PATH", "/app/history/history.db")
-DEFAULT_LLM_MODEL = os.environ.get("MEM0_DEFAULT_LLM_MODEL", "gpt-4.1-nano-2025-04-14")
+DEFAULT_LLM_MODEL = os.environ.get("MEM0_DEFAULT_LLM_MODEL", "gpt-5.4-nano")
 DEFAULT_EMBEDDER_MODEL = os.environ.get("MEM0_DEFAULT_EMBEDDER_MODEL", "text-embedding-3-small")
 
 DEFAULT_CONFIG = {
@@ -168,6 +173,24 @@ app.include_router(auth_router.router)
 app.include_router(api_keys_router.router)
 app.include_router(entities_router.router)
 app.include_router(requests_router.router)
+app.include_router(categories_router.router)
+app.include_router(webhooks_router.router)
+app.include_router(analytics_router.router)
+app.include_router(export_router.router)
+
+
+async def _webhook_retry_loop() -> None:
+    while True:
+        await asyncio.sleep(15)
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, process_due_webhooks, SessionLocal)
+        except Exception:
+            logging.exception("Failed to process due webhooks")
+
+
+@app.on_event("startup")
+async def start_webhook_retry_loop() -> None:
+    asyncio.create_task(_webhook_retry_loop())
 
 
 class Message(BaseModel):
@@ -362,6 +385,16 @@ def add_memory(memory_create: MemoryCreate, _auth=Depends(verify_auth)):
         response = get_memory_instance().add(messages=[m.model_dump() for m in memory_create.messages], **params)
         if response.get("results"):
             telemetry.log_dashboard_nudge_once(DASHBOARD_URL)
+            with SessionLocal() as session:
+                for memory in response.get("results", []):
+                    try:
+                        classify_memory(session, memory)
+                    except Exception:
+                        logging.warning("Failed to classify memory %s", memory.get("id"), exc_info=True)
+                    try:
+                        enqueue_webhook_event(session, "memory.created", {"memory": memory})
+                    except Exception:
+                        logging.warning("Failed to enqueue memory.created webhook", exc_info=True)
         return JSONResponse(content=response)
     except Exception:
         raise upstream_error()
@@ -450,7 +483,17 @@ def search_memories(search_req: SearchRequest, _auth=Depends(verify_auth)):
             params["threshold"] = search_req.threshold
         if search_req.explain is not None:
             params["explain"] = search_req.explain
-        return get_memory_instance().search(query=search_req.query, filters=filters, **params)
+        response = get_memory_instance().search(query=search_req.query, filters=filters, **params)
+        try:
+            with SessionLocal() as session:
+                enqueue_webhook_event(
+                    session,
+                    "search.performed",
+                    {"query": search_req.query, "filters": filters, "result_count": len(response.get("results", []))},
+                )
+        except Exception:
+            logging.warning("Failed to enqueue search.performed webhook", exc_info=True)
+        return response
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
@@ -463,9 +506,17 @@ def search_memories(search_req: SearchRequest, _auth=Depends(verify_auth)):
 def update_memory(memory_id: str, updated_memory: MemoryUpdate, _auth=Depends(verify_auth)):
     """Update an existing memory."""
     try:
-        return get_memory_instance().update(
+        response = get_memory_instance().update(
             memory_id=memory_id, data=updated_memory.text, metadata=updated_memory.metadata
         )
+        try:
+            memory = _serialize_memory(get_memory_instance().vector_store.get(vector_id=memory_id))
+            with SessionLocal() as session:
+                classify_memory(session, memory)
+                enqueue_webhook_event(session, "memory.updated", {"memory": memory})
+        except Exception:
+            logging.warning("Failed to run memory.updated side effects", exc_info=True)
+        return response
     except Exception:
         raise upstream_error()
 
@@ -483,7 +534,15 @@ def memory_history(memory_id: str, _auth=Depends(verify_auth)):
 def delete_memory(memory_id: str, _auth=Depends(verify_auth)):
     """Delete a specific memory by ID."""
     try:
+        memory = _serialize_memory(get_memory_instance().vector_store.get(vector_id=memory_id))
         get_memory_instance().delete(memory_id=memory_id)
+        try:
+            with SessionLocal() as session:
+                session.execute(delete(MemoryCategory).where(MemoryCategory.memory_id == memory_id))
+                enqueue_webhook_event(session, "memory.deleted", {"memory": memory})
+                session.commit()
+        except Exception:
+            logging.warning("Failed to run memory.deleted side effects", exc_info=True)
         return MessageResponse(message="Memory deleted successfully")
     except Exception:
         raise upstream_error()

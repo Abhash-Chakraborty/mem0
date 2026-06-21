@@ -1,0 +1,9 @@
+.env
+.env.production
+__pycache__/
+*.pyc
+.pytest_cache/
+history/
+dashboard/
+docker-compose*.yaml
+README.md

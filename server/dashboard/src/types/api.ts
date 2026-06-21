@@ -3,6 +3,9 @@ export interface Memory {
   memory: string;
   user_id?: string;
   agent_id?: string;
+  run_id?: string;
+  metadata?: Record<string, unknown>;
+  categories?: MemoryCategory[];
   created_at?: string;
   updated_at?: string;
 }
@@ -41,4 +44,64 @@ export interface Entity {
   total_memories: number;
   created_at: string | null;
   updated_at: string | null;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  is_active: boolean;
+  memory_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MemoryCategory {
+  id: string;
+  category_id: string;
+  name: string;
+  color: string;
+  confidence: number | null;
+  reason: string;
+  source: "ai" | "manual";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebhookEndpoint {
+  id: string;
+  name: string;
+  url: string;
+  events: string[];
+  is_active: boolean;
+  secret?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  endpoint_id: string;
+  event_type: string;
+  status: string;
+  attempts: number;
+  next_attempt_at: string | null;
+  last_attempt_at: string | null;
+  response_status: number | null;
+  response_body: string;
+  created_at: string;
+}
+
+export interface AnalyticsSummary {
+  total_requests: number;
+  success_rate: number;
+  average_latency_ms: number;
+  total_memories: number;
+  categorized_memories: number;
+  by_path: Array<{ path: string; count: number }>;
+  by_status: Array<{ status: string; count: number }>;
+  by_day: Array<{ date: string; count: number }>;
+  category_distribution: Array<{ name: string; color: string; count: number }>;
+  webhook_deliveries: Array<{ status: string; count: number }>;
 }
