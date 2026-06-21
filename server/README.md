@@ -23,6 +23,21 @@ Production images are built by GitHub Actions on pushes to `abhash-main`, pushed
 3. Merge `staging` into `abhash-main` only when you want to publish and deploy.
 4. Only `abhash-main` runs `.github/workflows/server-deploy.yml`.
 
+### Upstream sync
+
+`.github/workflows/upstream-sync.yml` runs weekly (and on demand via
+**Actions → Upstream Sync → Run workflow**). It fetches `mem0ai/mem0`, rebases
+`abhash-main` onto `upstream/main` on an `integration/upstream-sync-<date>`
+branch, and opens a PR:
+
+- **Clean rebase** → a normal PR titled `sync upstream <date>`.
+- **Conflicts** → a **draft** PR whose branch merges upstream with conflict
+  markers committed, plus a comment listing the conflicted files. Resolve them
+  locally, push, then mark the PR ready. Nothing is auto-resolved.
+
+Fork customizations live under `server/` (+ workflows and `ABHASH.md`), so most
+upstream changes touch unrelated paths and rebase cleanly.
+
 ### One-time VPS setup
 
 Clone the fork on the VPS and create the production env file:
