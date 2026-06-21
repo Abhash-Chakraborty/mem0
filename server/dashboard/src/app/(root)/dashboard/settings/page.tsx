@@ -87,9 +87,47 @@ export default function SettingsPage() {
     }
   };
 
+  const instanceName =
+    process.env.NEXT_PUBLIC_INSTANCE_NAME || "Abhash Memory";
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold font-fustat">Settings</h1>
+
+      <Card className="border-memBorder-primary">
+        <CardHeader>
+          <CardTitle className="text-sm">Instance</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-xs text-onSurface-default-tertiary">
+                Instance name
+              </dt>
+              <dd className="mt-0.5 font-medium">{instanceName}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-onSurface-default-tertiary">
+                Deployment
+              </dt>
+              <dd className="mt-0.5 font-medium">Self-hosted</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-onSurface-default-tertiary">
+                Signed in as
+              </dt>
+              <dd className="mt-0.5 font-medium capitalize">
+                {user?.role ?? "admin"}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-4 text-xs text-onSurface-default-tertiary">
+            This is a single-tenant personal deployment. Memories and request
+            logs are stored locally in Postgres; nothing is sent to a hosted
+            Mem0 service.
+          </p>
+        </CardContent>
+      </Card>
 
       <Card className="border-memBorder-primary">
         <CardHeader>
