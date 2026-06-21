@@ -57,6 +57,8 @@ export const WEBHOOK_ENDPOINTS = {
     `/webhooks/${endpointId}/regenerate-secret`,
   TEST: (endpointId: string) => `/webhooks/${endpointId}/test`,
   DELIVERIES: "/webhooks/deliveries",
+  RETRY_DELIVERY: (deliveryId: string) =>
+    `/webhooks/deliveries/${deliveryId}/retry`,
 } as const;
 
 export const ANALYTICS_ENDPOINTS = {

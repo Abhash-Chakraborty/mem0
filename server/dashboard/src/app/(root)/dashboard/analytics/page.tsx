@@ -1,6 +1,18 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/shared/table-skeleton";
@@ -10,19 +22,17 @@ import { api } from "@/utils/api";
 import { ANALYTICS_ENDPOINTS } from "@/utils/api-endpoints";
 import { AnalyticsSummary } from "@/types/api";
 
+const STATUS_COLORS: Record<string, string> = {
+  delivered: "#10b981",
+  pending: "#f59e0b",
+  failed: "#f43f5e",
+  disabled: "#a1a1aa",
+};
+
 export default function AnalyticsPage() {
   const { data, isLoading, refetch } = useApiQuery<AnalyticsSummary>(
     async () => (await api.get(ANALYTICS_ENDPOINTS.BASE)).data,
     { errorToast: "Failed to load analytics" },
-  );
-
-  const maxDaily = Math.max(
-    ...(data?.by_day ?? []).map((item) => item.count),
-    1,
-  );
-  const maxCategory = Math.max(
-    ...(data?.category_distribution ?? []).map((item) => item.count),
-    1,
   );
 
   return (
@@ -74,24 +84,44 @@ export default function AnalyticsPage() {
                     description="Requests appear after API traffic."
                   />
                 ) : (
-                  <div className="flex h-56 items-end gap-2">
-                    {data.by_day.map((item) => (
-                      <div
-                        key={item.date}
-                        className="flex flex-1 flex-col items-center gap-2"
+                  <div className="h-56 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={data.by_day.map((item) => ({
+                          ...item,
+                          label: item.date.slice(5),
+                        }))}
+                        margin={{ top: 8, right: 8, left: -20, bottom: 0 }}
                       >
-                        <div
-                          className="w-full rounded-t bg-surface-default-brand"
-                          style={{
-                            height: `${Math.max(8, (item.count / maxDaily) * 100)}%`,
-                          }}
-                          title={`${item.date}: ${item.count}`}
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          vertical={false}
+                          stroke="currentColor"
+                          className="text-memBorder-primary"
                         />
-                        <span className="text-[10px] text-onSurface-default-tertiary">
-                          {item.date.slice(5)}
-                        </span>
-                      </div>
-                    ))}
+                        <XAxis
+                          dataKey="label"
+                          tick={{ fontSize: 11 }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          allowDecimals={false}
+                          tick={{ fontSize: 11 }}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <RechartsTooltip
+                          cursor={{ fill: "rgba(124,58,237,0.08)" }}
+                          contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                        />
+                        <Bar
+                          dataKey="count"
+                          fill="#7c3aed"
+                          radius={[4, 4, 0, 0]}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 )}
               </CardContent>
@@ -101,30 +131,58 @@ export default function AnalyticsPage() {
               <CardHeader>
                 <CardTitle className="text-sm">Category distribution</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent>
                 {data.category_distribution.length === 0 ? (
                   <EmptyState
                     title="No categories"
                     description="Create categories to see distribution."
                   />
                 ) : (
-                  data.category_distribution.map((category) => (
-                    <div key={category.name} className="space-y-1">
-                      <div className="flex justify-between text-sm">
-                        <span>{category.name}</span>
-                        <span>{category.count}</span>
-                      </div>
-                      <div className="h-2 rounded bg-surface-default-secondary">
-                        <div
-                          className="h-2 rounded"
-                          style={{
-                            width: `${(category.count / maxCategory) * 100}%`,
-                            backgroundColor: category.color,
-                          }}
-                        />
-                      </div>
+                  <div className="flex items-center gap-4">
+                    <div className="h-56 w-1/2">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={data.category_distribution}
+                            dataKey="count"
+                            nameKey="name"
+                            innerRadius={45}
+                            outerRadius={75}
+                            paddingAngle={2}
+                          >
+                            {data.category_distribution.map((category) => (
+                              <Cell
+                                key={category.name}
+                                fill={category.color || "#7c3aed"}
+                              />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip
+                            contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
                     </div>
-                  ))
+                    <div className="flex-1 space-y-1.5">
+                      {data.category_distribution.map((category) => (
+                        <div
+                          key={category.name}
+                          className="flex items-center justify-between gap-2 text-sm"
+                        >
+                          <span className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="size-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: category.color }}
+                            />
+                            <span className="truncate">{category.name}</span>
+                          </span>
+                          <span className="text-onSurface-default-secondary">
+                            {category.count}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -136,17 +194,24 @@ export default function AnalyticsPage() {
                 <CardTitle className="text-sm">Top endpoints</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {data.by_path.map((item) => (
-                  <div
-                    key={item.path}
-                    className="flex justify-between gap-4 text-sm"
-                  >
-                    <span className="truncate font-mono text-xs">
-                      {item.path}
-                    </span>
-                    <span>{item.count}</span>
-                  </div>
-                ))}
+                {data.by_path.length === 0 ? (
+                  <EmptyState
+                    title="No endpoint data"
+                    description="Endpoints appear after API traffic."
+                  />
+                ) : (
+                  data.by_path.map((item) => (
+                    <div
+                      key={item.path}
+                      className="flex justify-between gap-4 text-sm"
+                    >
+                      <span className="truncate font-mono text-xs">
+                        {item.path}
+                      </span>
+                      <span>{item.count}</span>
+                    </div>
+                  ))
+                )}
               </CardContent>
             </Card>
 
@@ -164,9 +229,18 @@ export default function AnalyticsPage() {
                   data.webhook_deliveries.map((item) => (
                     <div
                       key={item.status}
-                      className="flex justify-between text-sm"
+                      className="flex items-center justify-between text-sm"
                     >
-                      <span>{item.status}</span>
+                      <span className="flex items-center gap-2 capitalize">
+                        <span
+                          className="size-2.5 rounded-full"
+                          style={{
+                            backgroundColor:
+                              STATUS_COLORS[item.status] ?? "#a1a1aa",
+                          }}
+                        />
+                        {item.status}
+                      </span>
                       <span>{item.count}</span>
                     </div>
                   ))

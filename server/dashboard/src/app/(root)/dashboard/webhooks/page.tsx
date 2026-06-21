@@ -1,7 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Play, Power, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import {
+  Play,
+  Power,
+  RefreshCw,
+  RotateCcw,
+  RotateCw,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -157,11 +165,33 @@ export default function WebhooksPage() {
     }
   };
 
+  const retryDelivery = async (deliveryId: string) => {
+    setBusy(true);
+    try {
+      await api.post(WEBHOOK_ENDPOINTS.RETRY_DELIVERY(deliveryId));
+      toast({ title: "Delivery retried", variant: "success" });
+      await deliveriesQuery.refetch();
+    } catch (error) {
+      toast({
+        title: "Failed to retry delivery",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const endpointName = (endpointId: string) =>
+    endpoints.find((endpoint) => endpoint.id === endpointId)?.name ?? "endpoint";
+
   const statusClassName = (status: string) => {
     if (status === "delivered")
       return "border-emerald-200 bg-emerald-50 text-emerald-700";
     if (status === "pending")
       return "border-amber-200 bg-amber-50 text-amber-700";
+    if (status === "disabled")
+      return "border-zinc-200 bg-zinc-50 text-zinc-600";
     return "border-rose-200 bg-rose-50 text-rose-700";
   };
 
@@ -227,6 +257,17 @@ export default function WebhooksPage() {
           </div>
         </CardContent>
       </Card>
+
+      <div className="flex items-start gap-2 rounded-md border border-memBorder-primary bg-surface-default-secondary/40 p-3 text-xs text-onSurface-default-secondary">
+        <ShieldCheck className="size-4 shrink-0 mt-0.5 text-onSurface-default-tertiary" />
+        <p>
+          Every delivery is signed. Verify it by computing{" "}
+          <code className="font-mono">HMAC-SHA256(secret, rawBody)</code> and
+          comparing it to the{" "}
+          <code className="font-mono">X-Mem0-Signature-256</code> header. The
+          event name is also sent as <code className="font-mono">X-Mem0-Event</code>.
+        </p>
+      </div>
 
       {endpointsQuery.isLoading ? (
         <TableSkeleton rows={3} columns={4} />
@@ -312,20 +353,39 @@ export default function WebhooksPage() {
           <div className="space-y-2">
             {deliveries.slice(0, 50).map((delivery) => (
               <Card key={delivery.id} className="border-memBorder-primary">
-                <CardContent className="grid gap-2 p-3 text-sm md:grid-cols-[1fr_120px_100px_1fr]">
-                  <span className="font-mono text-xs">
-                    {delivery.event_type}
-                  </span>
+                <CardContent className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3 text-sm">
                   <Badge
                     variant="outline"
                     className={statusClassName(delivery.status)}
                   >
                     {delivery.status}
                   </Badge>
-                  <span>{delivery.attempts} attempts</span>
-                  <span className="truncate text-onSurface-default-secondary">
-                    {delivery.response_status ?? "--"} {delivery.response_body}
+                  <span className="font-mono text-xs">{delivery.event_type}</span>
+                  <span className="text-xs text-onSurface-default-tertiary">
+                    → {endpointName(delivery.endpoint_id)}
                   </span>
+                  <span className="text-xs text-onSurface-default-secondary">
+                    {delivery.attempts} attempt
+                    {delivery.attempts === 1 ? "" : "s"}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-onSurface-default-secondary">
+                    {delivery.response_status
+                      ? `HTTP ${delivery.response_status}`
+                      : ""}{" "}
+                    {delivery.response_body}
+                  </span>
+                  {(delivery.status === "failed" ||
+                    delivery.status === "disabled") && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => retryDelivery(delivery.id)}
+                      disabled={busy}
+                    >
+                      <RotateCw className="size-3.5 mr-1" />
+                      Retry now
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ))}

@@ -180,3 +180,21 @@ def list_deliveries(
         stmt = stmt.where(WebhookDelivery.endpoint_id == uuid.UUID(endpoint_id))
     deliveries = db.scalars(stmt).all()
     return [_delivery_response(delivery) for delivery in deliveries]
+
+
+@router.post("/deliveries/{delivery_id}/retry")
+def retry_delivery(delivery_id: str, _auth=Depends(require_admin), db: Session = Depends(get_db)):
+    delivery = db.get(WebhookDelivery, uuid.UUID(delivery_id))
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found.")
+    endpoint = db.get(WebhookEndpoint, delivery.endpoint_id)
+    if not endpoint or not endpoint.is_active:
+        raise HTTPException(status_code=400, detail="Endpoint is missing or disabled.")
+    # Give the delivery a fresh retry budget and dispatch immediately.
+    delivery.attempts = 0
+    delivery.status = "pending"
+    delivery.next_attempt_at = utcnow()
+    db.commit()
+    process_due_webhooks(SessionLocal)
+    db.refresh(delivery)
+    return _delivery_response(delivery)

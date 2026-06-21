@@ -1,13 +1,34 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, Tag, Trash2, Wand2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/self-hosted/empty-state";
 import { TableSkeleton } from "@/components/shared/table-skeleton";
 import { toast } from "@/components/ui/use-toast";
@@ -21,6 +42,7 @@ export default function CategoriesPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [color, setColor] = useState("#7c3aed");
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [manualCategoryByMemory, setManualCategoryByMemory] = useState<
     Record<string, string>
@@ -41,7 +63,11 @@ export default function CategoriesPage() {
       });
       return res.data?.results ?? [];
     },
-    { errorToast: "Failed to load categorized memories", initialData: [] },
+    {
+      errorToast: "Failed to load categorized memories",
+      initialData: [],
+      deps: [selectedCategory],
+    },
   );
 
   const categories = categoriesQuery.data ?? [];
@@ -55,14 +81,11 @@ export default function CategoriesPage() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      await api.post(CATEGORY_ENDPOINTS.BASE, {
-        name,
-        description,
-        color,
-      });
+      await api.post(CATEGORY_ENDPOINTS.BASE, { name, description, color });
       setName("");
       setDescription("");
       setColor("#7c3aed");
+      setCreateOpen(false);
       toast({ title: "Category created", variant: "success" });
       await refreshAll();
     } catch (error) {
@@ -95,6 +118,12 @@ export default function CategoriesPage() {
   };
 
   const reclassifyAll = async () => {
+    if (
+      !window.confirm(
+        "Re-run AI classification across all memories? This calls the model for each memory and may take a while.",
+      )
+    )
+      return;
     setBusy(true);
     try {
       const res = await api.post(CATEGORY_ENDPOINTS.RECLASSIFY);
@@ -160,7 +189,8 @@ export default function CategoriesPage() {
         <div>
           <h1 className="text-xl font-semibold font-fustat">Categories</h1>
           <p className="text-sm text-onSurface-default-secondary mt-1">
-            Self-hosted AI categories for organizing memories.
+            Organize memories with AI-assigned categories. New memories are
+            auto-classified; you can correct any assignment by hand.
           </p>
         </div>
         <div className="flex gap-2">
@@ -169,46 +199,80 @@ export default function CategoriesPage() {
             Refresh
           </Button>
           <Button
+            variant="outline"
             onClick={reclassifyAll}
             disabled={busy || categories.length === 0}
           >
-            <Sparkles className="size-4 mr-2" />
+            <Wand2 className="size-4 mr-2" />
             Reclassify all
           </Button>
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="size-4 mr-2" />
+                New category
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>New category</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label>Name</Label>
+                  <Input
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="Work"
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Description</Label>
+                  <Textarea
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    placeholder="What belongs here — e.g. projects and work preferences"
+                    className="min-h-16"
+                  />
+                  <p className="text-xs text-onSurface-default-tertiary">
+                    The description guides the AI when classifying memories.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Color</Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={color}
+                      onChange={(event) => setColor(event.target.value)}
+                      className="h-9 w-12 cursor-pointer rounded-md border border-memBorder-primary bg-transparent p-1"
+                      aria-label="Category color"
+                    />
+                    <Input
+                      value={color}
+                      onChange={(event) => setColor(event.target.value)}
+                      className="w-32 font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setCreateOpen(false)}
+                  disabled={busy}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={createCategory} disabled={busy || !name.trim()}>
+                  Create
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
-
-      <Card className="border-memBorder-primary">
-        <CardContent className="grid gap-4 p-5 md:grid-cols-[1fr_1.5fr_120px_auto] md:items-end">
-          <div className="space-y-1.5">
-            <Label>Name</Label>
-            <Input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Work"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder="Career goals, projects, and work preferences"
-              className="min-h-10"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Color</Label>
-            <Input
-              value={color}
-              onChange={(event) => setColor(event.target.value)}
-            />
-          </div>
-          <Button onClick={createCategory} disabled={busy || !name.trim()}>
-            Create
-          </Button>
-        </CardContent>
-      </Card>
 
       {categoriesQuery.isLoading ? (
         <TableSkeleton rows={3} columns={3} />
@@ -228,7 +292,7 @@ export default function CategoriesPage() {
                 <div className="flex items-start justify-between gap-3">
                   <button
                     type="button"
-                    className="text-left"
+                    className="text-left min-w-0"
                     onClick={() =>
                       setSelectedCategory(
                         selectedCategory === category.id ? "" : category.id,
@@ -237,12 +301,15 @@ export default function CategoriesPage() {
                   >
                     <div className="flex items-center gap-2">
                       <span
-                        className="size-3 rounded-full"
+                        className="size-3 rounded-full shrink-0"
                         style={{ backgroundColor: category.color }}
                       />
-                      <p className="font-medium">{category.name}</p>
+                      <p className="font-medium truncate">{category.name}</p>
                     </div>
-                    <p className="text-xs text-onSurface-default-secondary mt-1 line-clamp-2">
+                    <p
+                      className="text-xs text-onSurface-default-secondary mt-1 line-clamp-2"
+                      title={category.description || undefined}
+                    >
                       {category.description || "No description"}
                     </p>
                   </button>
@@ -290,66 +357,98 @@ export default function CategoriesPage() {
             description="Add memories, then run classification."
           />
         ) : (
-          <div className="space-y-3">
-            {memories.slice(0, 50).map((memory) => (
-              <Card key={memory.id} className="border-memBorder-primary">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-4">
-                    <p className="text-sm">{memory.memory}</p>
-                    <div className="flex shrink-0 gap-2">
-                      <select
-                        className="h-9 rounded-md border border-memBorder-primary bg-surface-default-primary px-2 text-sm"
-                        value={manualCategoryByMemory[memory.id] ?? ""}
-                        onChange={(event) =>
-                          setManualCategoryByMemory((current) => ({
-                            ...current,
-                            [memory.id]: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="">Assign...</option>
-                        {categories.map((category) => (
-                          <option key={category.id} value={category.id}>
-                            {category.name}
-                          </option>
-                        ))}
-                      </select>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => assignMemory(memory.id)}
-                        disabled={busy || !manualCategoryByMemory[memory.id]}
-                      >
-                        Assign
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => classifyMemory(memory.id)}
-                        disabled={busy}
-                      >
-                        <Sparkles className="size-3.5 mr-1" />
-                        Classify
-                      </Button>
+          <TooltipProvider>
+            <div className="space-y-3">
+              {memories.slice(0, 50).map((memory) => (
+                <Card key={memory.id} className="border-memBorder-primary">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <p className="text-sm min-w-0">{memory.memory}</p>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Select
+                          value={manualCategoryByMemory[memory.id] ?? ""}
+                          onValueChange={(value) =>
+                            setManualCategoryByMemory((current) => ({
+                              ...current,
+                              [memory.id]: value,
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="h-9 w-36">
+                            <SelectValue placeholder="Assign…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {categories.map((category) => (
+                              <SelectItem key={category.id} value={category.id}>
+                                {category.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => assignMemory(memory.id)}
+                          disabled={busy || !manualCategoryByMemory[memory.id]}
+                        >
+                          Assign
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => classifyMemory(memory.id)}
+                          disabled={busy}
+                        >
+                          <Wand2 className="size-3.5 mr-1" />
+                          Classify
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {(memory.categories ?? []).length === 0 ? (
-                      <Badge variant="outline">Uncategorized</Badge>
-                    ) : (
-                      memory.categories?.map((category) => (
-                        <Badge key={category.id} variant="outline">
-                          {category.name}
-                          {category.confidence !== null &&
-                            ` ${Math.round(category.confidence * 100)}%`}
+                    <div className="flex flex-wrap gap-2">
+                      {(memory.categories ?? []).length === 0 ? (
+                        <Badge variant="outline" className="text-onSurface-default-tertiary">
+                          Uncategorized
                         </Badge>
-                      ))
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                      ) : (
+                        memory.categories?.map((category) => (
+                          <Tooltip key={category.id}>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="outline"
+                                className="gap-1.5 cursor-default"
+                              >
+                                <span
+                                  className="size-2 rounded-full"
+                                  style={{ backgroundColor: category.color }}
+                                />
+                                {category.name}
+                                {category.source === "manual" ? (
+                                  <span className="text-[10px] text-onSurface-default-tertiary">
+                                    manual
+                                  </span>
+                                ) : (
+                                  category.confidence !== null && (
+                                    <span className="text-[10px] text-onSurface-default-tertiary">
+                                      {Math.round(category.confidence * 100)}%
+                                    </span>
+                                  )
+                                )}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {category.source === "manual"
+                                ? "Manually assigned"
+                                : `AI · ${category.reason || "no reason given"}`}
+                            </TooltipContent>
+                          </Tooltip>
+                        ))
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </TooltipProvider>
         )}
       </div>
     </div>
