@@ -5,7 +5,14 @@ from auth import require_admin
 from db import get_db
 from errors import upstream_error
 from fastapi import APIRouter, Depends, HTTPException, Query
-from feature_services import attach_categories, category_counts, classify_memory, get_memory, list_memories
+from feature_services import (
+    apply_auto_add_categories,
+    attach_categories,
+    category_counts,
+    classify_memory,
+    get_memory,
+    list_memories,
+)
 from models import Category, MemoryCategory
 from pydantic import BaseModel, Field
 from schemas import MessageResponse
@@ -21,6 +28,7 @@ class CategoryCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     description: str = ""
     color: str = "#7c3aed"
+    auto_add: bool = False
 
 
 class CategoryUpdate(BaseModel):
@@ -28,6 +36,7 @@ class CategoryUpdate(BaseModel):
     description: str | None = None
     color: str | None = None
     is_active: bool | None = None
+    auto_add: bool | None = None
 
 
 class AssignCategoryRequest(BaseModel):
@@ -42,6 +51,7 @@ def _category_response(category: Category, count: int = 0) -> dict[str, Any]:
         "description": category.description,
         "color": category.color,
         "is_active": category.is_active,
+        "auto_add": category.auto_add,
         "memory_count": count,
         "created_at": category.created_at.isoformat(),
         "updated_at": category.updated_at.isoformat(),
@@ -63,7 +73,12 @@ def create_category(body: CategoryCreate, _auth=Depends(require_admin), db: Sess
     existing = db.scalar(select(Category).where(Category.name == name))
     if existing:
         raise HTTPException(status_code=409, detail="Category already exists.")
-    category = Category(name=name, description=body.description.strip(), color=body.color.strip() or "#7c3aed")
+    category = Category(
+        name=name,
+        description=body.description.strip(),
+        color=body.color.strip() or "#7c3aed",
+        auto_add=body.auto_add,
+    )
     db.add(category)
     db.commit()
     db.refresh(category)
@@ -91,6 +106,8 @@ def update_category(
         category.color = body.color.strip() or "#7c3aed"
     if body.is_active is not None:
         category.is_active = body.is_active
+    if body.auto_add is not None:
+        category.auto_add = body.auto_add
     db.commit()
     db.refresh(category)
     return _category_response(category, category_counts(db).get(str(category.id), 0))
@@ -187,6 +204,7 @@ def reclassify_all(_auth=Depends(require_admin), db: Session = Depends(get_db)):
     for memory in memories:
         try:
             classify_memory(db, memory)
+            apply_auto_add_categories(db, memory)
             processed += 1
         except Exception:
             continue

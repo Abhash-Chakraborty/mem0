@@ -40,7 +40,12 @@ from server_state import (
 )
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from feature_services import classify_memory, enqueue_webhook_event, process_due_webhooks
+from feature_services import (
+    apply_auto_add_categories,
+    classify_memory,
+    enqueue_webhook_event,
+    process_due_webhooks,
+)
 from models import MemoryCategory, RequestLog, User
 from sqlalchemy import delete, func, select
 
@@ -393,6 +398,10 @@ def add_memory(memory_create: MemoryCreate, _auth=Depends(verify_auth)):
                         classify_memory(session, memory)
                     except Exception:
                         logging.warning("Failed to classify memory %s", memory.get("id"), exc_info=True)
+                    try:
+                        apply_auto_add_categories(session, memory)
+                    except Exception:
+                        logging.warning("Failed to auto-add categories for memory %s", memory.get("id"), exc_info=True)
                     try:
                         enqueue_webhook_event(session, "memory.created", {"memory": memory})
                     except Exception:

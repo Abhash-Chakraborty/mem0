@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -42,6 +43,7 @@ export default function CategoriesPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [color, setColor] = useState("#7c3aed");
+  const [autoAdd, setAutoAdd] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [manualCategoryByMemory, setManualCategoryByMemory] = useState<
@@ -81,10 +83,16 @@ export default function CategoriesPage() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      await api.post(CATEGORY_ENDPOINTS.BASE, { name, description, color });
+      await api.post(CATEGORY_ENDPOINTS.BASE, {
+        name,
+        description,
+        color,
+        auto_add: autoAdd,
+      });
       setName("");
       setDescription("");
       setColor("#7c3aed");
+      setAutoAdd(false);
       setCreateOpen(false);
       toast({ title: "Category created", variant: "success" });
       await refreshAll();
@@ -109,6 +117,29 @@ export default function CategoriesPage() {
     } catch (error) {
       toast({
         title: "Failed to delete category",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleAutoAdd = async (categoryId: string, autoAdd: boolean) => {
+    setBusy(true);
+    try {
+      await api.patch(CATEGORY_ENDPOINTS.BY_ID(categoryId), { auto_add: autoAdd });
+      toast({
+        title: autoAdd ? "Auto-add enabled" : "Auto-add disabled",
+        description: autoAdd
+          ? "This category will be attached to every new memory."
+          : "New memories will no longer be auto-tagged with this category.",
+        variant: "success",
+      });
+      await categoriesQuery.refetch();
+    } catch (error) {
+      toast({
+        title: "Failed to update category",
         description: getErrorMessage(error),
         variant: "destructive",
       });
@@ -256,6 +287,22 @@ export default function CategoriesPage() {
                     />
                   </div>
                 </div>
+                <div className="flex items-center justify-between gap-2 rounded-md border border-memBorder-primary p-3">
+                  <div className="min-w-0">
+                    <Label htmlFor="new-auto-add" className="cursor-pointer">
+                      Auto-add to new memories
+                    </Label>
+                    <p className="text-xs text-onSurface-default-tertiary">
+                      Always tag every new memory with this category (no AI
+                      decision). Off by default.
+                    </p>
+                  </div>
+                  <Switch
+                    id="new-auto-add"
+                    checked={autoAdd}
+                    onCheckedChange={setAutoAdd}
+                  />
+                </div>
               </div>
               <DialogFooter>
                 <Button
@@ -325,6 +372,27 @@ export default function CategoriesPage() {
                 <Badge variant="outline">
                   {category.memory_count} memories
                 </Badge>
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <div className="min-w-0">
+                    <Label
+                      htmlFor={`auto-add-${category.id}`}
+                      className="text-xs font-medium cursor-pointer"
+                    >
+                      Auto-add to new memories
+                    </Label>
+                    <p className="text-[11px] text-onSurface-default-tertiary">
+                      Always tag new memories with this category
+                    </p>
+                  </div>
+                  <Switch
+                    id={`auto-add-${category.id}`}
+                    checked={category.auto_add}
+                    onCheckedChange={(checked) =>
+                      toggleAutoAdd(category.id, checked)
+                    }
+                    disabled={busy}
+                  />
+                </div>
               </CardContent>
             </Card>
           ))}
@@ -426,6 +494,10 @@ export default function CategoriesPage() {
                                   <span className="text-[10px] text-onSurface-default-tertiary">
                                     manual
                                   </span>
+                                ) : category.source === "auto" ? (
+                                  <span className="text-[10px] text-onSurface-default-tertiary">
+                                    auto
+                                  </span>
                                 ) : (
                                   category.confidence !== null && (
                                     <span className="text-[10px] text-onSurface-default-tertiary">
@@ -438,7 +510,9 @@ export default function CategoriesPage() {
                             <TooltipContent>
                               {category.source === "manual"
                                 ? "Manually assigned"
-                                : `AI · ${category.reason || "no reason given"}`}
+                                : category.source === "auto"
+                                  ? "Auto-added by category rule"
+                                  : `AI · ${category.reason || "no reason given"}`}
                             </TooltipContent>
                           </Tooltip>
                         ))

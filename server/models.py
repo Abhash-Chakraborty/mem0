@@ -82,6 +82,9 @@ class Category(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     color: Mapped[str] = mapped_column(String(32), default="#7c3aed")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # When True, this category is attached to every new memory automatically
+    # (no AI judgment), independent of the AI auto-classifier. Defaults off.
+    auto_add: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

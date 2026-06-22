@@ -71,6 +71,7 @@ export interface Category {
   description: string;
   color: string;
   is_active: boolean;
+  auto_add: boolean;
   memory_count: number;
   created_at: string;
   updated_at: string;
@@ -83,7 +84,7 @@ export interface MemoryCategory {
   color: string;
   confidence: number | null;
   reason: string;
-  source: "ai" | "manual";
+  source: "ai" | "manual" | "auto";
   created_at: string;
   updated_at: string;
 }
