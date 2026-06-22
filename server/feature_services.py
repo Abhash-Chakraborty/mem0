@@ -180,6 +180,39 @@ def classify_memory(db: Session, memory: dict[str, Any]) -> list[dict[str, Any]]
     return assignments
 
 
+def apply_auto_add_categories(db: Session, memory: dict[str, Any]) -> list[dict[str, Any]]:
+    """Attach every active, auto-add category to a memory.
+
+    Unlike the AI classifier this makes no judgment — flagged categories are
+    always added. Uses on-conflict-do-nothing so an existing manual/AI
+    assignment on the same (memory, category) is never downgraded to "auto".
+    """
+    memory_id = memory.get("id")
+    if not memory_id:
+        return []
+    categories = db.scalars(
+        select(Category).where(Category.is_active.is_(True), Category.auto_add.is_(True))
+    ).all()
+    if not categories:
+        return []
+
+    assignments = [
+        {
+            "memory_id": str(memory_id),
+            "category_id": str(category.id),
+            "confidence": None,
+            "reason": "Auto-added (category rule)",
+            "source": "auto",
+        }
+        for category in categories
+    ]
+    for assignment in assignments:
+        stmt = insert(MemoryCategory).values(**assignment).on_conflict_do_nothing(constraint="uq_memory_category")
+        db.execute(stmt)
+    db.commit()
+    return assignments
+
+
 def generate_webhook_secret() -> str:
     return "whsec_" + secrets.token_urlsafe(32)
 
