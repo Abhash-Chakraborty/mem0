@@ -1,11 +1,14 @@
 "use client";
 
-import { RefreshCw } from "lucide-react";
+import { useMemo, useState } from "react";
+import { format, subDays } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import {
-  Bar,
-  BarChart,
+  Area,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -13,86 +16,293 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import {
+  CalendarDays,
+  Database,
+  Gauge,
+  PlusCircle,
+  RefreshCw,
+  Search,
+  Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { TableSkeleton } from "@/components/shared/table-skeleton";
 import { EmptyState } from "@/components/self-hosted/empty-state";
 import { useApiQuery } from "@/hooks/use-api-query";
 import { api } from "@/utils/api";
 import { ANALYTICS_ENDPOINTS } from "@/utils/api-endpoints";
 import { AnalyticsSummary } from "@/types/api";
+import { cn } from "@/lib/utils";
 
-const STATUS_COLORS: Record<string, string> = {
-  delivered: "#10b981",
-  pending: "#f59e0b",
-  failed: "#f43f5e",
-  disabled: "#a1a1aa",
+const PRESETS = [
+  { key: "all", label: "All Time" },
+  { key: "1d", label: "1d" },
+  { key: "7d", label: "7d" },
+  { key: "30d", label: "30d" },
+] as const;
+
+const ENTITY_COLORS: Record<string, string> = {
+  user: "#0ea5e9",
+  agent: "#ef4444",
+  run: "#f59e0b",
+  app: "#8b5cf6",
 };
 
-export default function AnalyticsPage() {
+export default function DashboardPage() {
+  const [range, setRange] = useState<string>("all");
+  const [customRange, setCustomRange] = useState<DateRange | undefined>();
+  const [draftRange, setDraftRange] = useState<DateRange | undefined>();
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const queryParams = useMemo(() => {
+    if (range === "custom" && customRange?.from) {
+      const from = format(customRange.from, "yyyy-MM-dd");
+      const to = format(customRange.to ?? customRange.from, "yyyy-MM-dd");
+      return { start: from, end: to } as Record<string, string>;
+    }
+    return { range } as Record<string, string>;
+  }, [range, customRange]);
+
   const { data, isLoading, refetch } = useApiQuery<AnalyticsSummary>(
-    async () => (await api.get(ANALYTICS_ENDPOINTS.BASE)).data,
-    { errorToast: "Failed to load analytics" },
+    async () =>
+      (await api.get(ANALYTICS_ENDPOINTS.BASE, { params: queryParams })).data,
+    {
+      errorToast: "Failed to load dashboard",
+      deps: [JSON.stringify(queryParams)],
+    },
   );
 
+  const entityPie = useMemo(() => {
+    if (!data) return [];
+    return (["user", "agent", "run", "app"] as const)
+      .map((type) => ({
+        name: type,
+        value: data.entities_by_type?.[type] ?? 0,
+      }))
+      .filter((item) => item.value > 0);
+  }, [data]);
+
+  const chartData = useMemo(
+    () =>
+      (data?.series ?? []).map((point) => ({
+        ...point,
+        label: point.date.slice(5),
+      })),
+    [data],
+  );
+
+  const rangeLabel =
+    range === "custom" && customRange?.from
+      ? `${format(customRange.from, "MMM d")} – ${format(
+          customRange.to ?? customRange.from,
+          "MMM d",
+        )}`
+      : "Pick a date range";
+
+  const stats = data
+    ? [
+        {
+          label: "Total Memories",
+          value: data.total_memories,
+          icon: Database,
+          color: "text-violet-500",
+        },
+        {
+          label: "Requests",
+          value: data.total_requests,
+          icon: Gauge,
+          color: "text-emerald-500",
+        },
+        {
+          label: "Retrieval Events",
+          value: data.retrieval_events,
+          icon: Search,
+          color: "text-sky-500",
+        },
+        {
+          label: "Add Events",
+          value: data.add_events,
+          icon: PlusCircle,
+          color: "text-amber-500",
+        },
+      ]
+    : [];
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold font-fustat">Analytics</h1>
+          <h1 className="text-xl font-semibold font-fustat">Dashboard</h1>
           <p className="text-sm text-onSurface-default-secondary mt-1">
-            Local request, memory, category, and webhook health.
+            Memories, requests, and entities at a glance.
           </p>
         </div>
-        <Button variant="outline" onClick={refetch} disabled={isLoading}>
+        <Button variant="outline" size="sm" onClick={refetch} disabled={isLoading}>
           <RefreshCw className="size-4 mr-2" />
           Refresh
         </Button>
+      </div>
+
+      {/* Date range controls */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "gap-2",
+                range === "custom" && "border-memPurple-400 text-memPurple-500",
+              )}
+              onClick={() => setDraftRange(customRange)}
+            >
+              <CalendarDays className="size-4" />
+              {rangeLabel}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              mode="range"
+              numberOfMonths={2}
+              selected={draftRange}
+              onSelect={setDraftRange}
+              defaultMonth={subDays(new Date(), 30)}
+            />
+            <div className="flex items-center justify-end gap-2 border-t border-memBorder-primary p-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDraftRange(undefined);
+                  setPickerOpen(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={!draftRange?.from}
+                onClick={() => {
+                  setCustomRange(draftRange);
+                  setRange("custom");
+                  setPickerOpen(false);
+                }}
+              >
+                Apply
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        <div className="flex items-center gap-1">
+          {PRESETS.map((preset) => (
+            <Button
+              key={preset.key}
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "h-8",
+                range === preset.key &&
+                  "bg-surface-default-secondary text-onSurface-default-primary",
+              )}
+              onClick={() => {
+                setRange(preset.key);
+                setCustomRange(undefined);
+              }}
+            >
+              {preset.label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       {isLoading || !data ? (
         <TableSkeleton rows={6} columns={4} />
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            {[
-              { label: "Requests", value: data.total_requests },
-              { label: "Success Rate", value: `${data.success_rate}%` },
-              { label: "Avg Latency", value: `${data.average_latency_ms} ms` },
-              { label: "Memories", value: data.total_memories },
-            ].map((stat) => (
+          {/* Stat cards */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {stats.map((stat) => (
               <Card key={stat.label} className="border-memBorder-primary">
                 <CardContent className="p-5">
-                  <p className="text-xs text-onSurface-default-tertiary">
+                  <div className="flex items-center gap-2 text-xs text-onSurface-default-tertiary">
+                    <stat.icon className={cn("size-4", stat.color)} />
                     {stat.label}
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold">{stat.value}</p>
+                  </div>
+                  <p className="mt-2 text-3xl font-semibold">{stat.value}</p>
                 </CardContent>
               </Card>
             ))}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Card className="border-memBorder-primary">
-              <CardHeader>
+          {/* Secondary metrics */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {[
+              { label: "Entities", value: data.entities_total },
+              { label: "Entities / Request", value: data.entities_per_request },
+              { label: "Success Rate", value: `${data.success_rate}%` },
+              { label: "Avg Latency", value: `${data.average_latency_ms} ms` },
+            ].map((stat) => (
+              <Card key={stat.label} className="border-memBorder-primary">
+                <CardContent className="p-4">
+                  <p className="text-xs text-onSurface-default-tertiary">
+                    {stat.label}
+                  </p>
+                  <p className="mt-1 text-xl font-semibold">{stat.value}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Charts */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <Card className="border-memBorder-primary lg:col-span-2">
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-sm">Requests over time</CardTitle>
+                <span className="text-xs text-onSurface-default-tertiary">
+                  {data.total_requests} total
+                </span>
               </CardHeader>
               <CardContent>
-                {data.by_day.length === 0 ? (
+                {chartData.length === 0 ? (
                   <EmptyState
-                    title="No request data"
-                    description="Requests appear after API traffic."
+                    title="No activity in this range"
+                    description="Pick a wider date range or send some API traffic."
                   />
                 ) : (
-                  <div className="h-56 w-full">
+                  <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={data.by_day.map((item) => ({
-                          ...item,
-                          label: item.date.slice(5),
-                        }))}
+                      <ComposedChart
+                        data={chartData}
                         margin={{ top: 8, right: 8, left: -20, bottom: 0 }}
                       >
+                        <defs>
+                          <linearGradient
+                            id="reqFill"
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="0%"
+                              stopColor="#7c3aed"
+                              stopOpacity={0.3}
+                            />
+                            <stop
+                              offset="100%"
+                              stopColor="#7c3aed"
+                              stopOpacity={0}
+                            />
+                          </linearGradient>
+                        </defs>
                         <CartesianGrid
                           strokeDasharray="3 3"
                           vertical={false}
@@ -112,15 +322,33 @@ export default function AnalyticsPage() {
                           axisLine={false}
                         />
                         <RechartsTooltip
-                          cursor={{ fill: "rgba(124,58,237,0.08)" }}
                           contentStyle={{ fontSize: 12, borderRadius: 8 }}
                         />
-                        <Bar
-                          dataKey="count"
-                          fill="#7c3aed"
-                          radius={[4, 4, 0, 0]}
+                        <Area
+                          type="monotone"
+                          dataKey="requests"
+                          name="Requests"
+                          stroke="#7c3aed"
+                          strokeWidth={2}
+                          fill="url(#reqFill)"
                         />
-                      </BarChart>
+                        <Line
+                          type="monotone"
+                          dataKey="retrievals"
+                          name="Retrievals"
+                          stroke="#0ea5e9"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="adds"
+                          name="Adds"
+                          stroke="#f59e0b"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                      </ComposedChart>
                     </ResponsiveContainer>
                   </div>
                 )}
@@ -128,32 +356,33 @@ export default function AnalyticsPage() {
             </Card>
 
             <Card className="border-memBorder-primary">
-              <CardHeader>
-                <CardTitle className="text-sm">Category distribution</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="text-sm">Entities</CardTitle>
+                <Users className="size-4 text-onSurface-default-tertiary" />
               </CardHeader>
               <CardContent>
-                {data.category_distribution.length === 0 ? (
+                {entityPie.length === 0 ? (
                   <EmptyState
-                    title="No categories"
-                    description="Create categories to see distribution."
+                    title="No entities yet"
+                    description="Entities appear once memories carry user/agent/run ids."
                   />
                 ) : (
                   <div className="flex items-center gap-4">
-                    <div className="h-56 w-1/2">
+                    <div className="h-44 w-1/2">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
-                            data={data.category_distribution}
-                            dataKey="count"
+                            data={entityPie}
+                            dataKey="value"
                             nameKey="name"
-                            innerRadius={45}
-                            outerRadius={75}
+                            innerRadius={40}
+                            outerRadius={68}
                             paddingAngle={2}
                           >
-                            {data.category_distribution.map((category) => (
+                            {entityPie.map((entry) => (
                               <Cell
-                                key={category.name}
-                                fill={category.color || "#7c3aed"}
+                                key={entry.name}
+                                fill={ENTITY_COLORS[entry.name] ?? "#6b7280"}
                               />
                             ))}
                           </Pie>
@@ -164,20 +393,23 @@ export default function AnalyticsPage() {
                       </ResponsiveContainer>
                     </div>
                     <div className="flex-1 space-y-1.5">
-                      {data.category_distribution.map((category) => (
+                      {entityPie.map((entry) => (
                         <div
-                          key={category.name}
+                          key={entry.name}
                           className="flex items-center justify-between gap-2 text-sm"
                         >
-                          <span className="flex items-center gap-2 min-w-0">
+                          <span className="flex items-center gap-2 capitalize">
                             <span
-                              className="size-2.5 rounded-full shrink-0"
-                              style={{ backgroundColor: category.color }}
+                              className="size-2.5 rounded-full"
+                              style={{
+                                backgroundColor:
+                                  ENTITY_COLORS[entry.name] ?? "#6b7280",
+                              }}
                             />
-                            <span className="truncate">{category.name}</span>
+                            {entry.name}
                           </span>
                           <span className="text-onSurface-default-secondary">
-                            {category.count}
+                            {entry.value}
                           </span>
                         </div>
                       ))}
@@ -188,66 +420,33 @@ export default function AnalyticsPage() {
             </Card>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Category distribution */}
+          {data.category_distribution.length > 0 && (
             <Card className="border-memBorder-primary">
               <CardHeader>
-                <CardTitle className="text-sm">Top endpoints</CardTitle>
+                <CardTitle className="text-sm">Category distribution</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                {data.by_path.length === 0 ? (
-                  <EmptyState
-                    title="No endpoint data"
-                    description="Endpoints appear after API traffic."
-                  />
-                ) : (
-                  data.by_path.map((item) => (
+              <CardContent>
+                <div className="flex flex-wrap gap-x-6 gap-y-2">
+                  {data.category_distribution.map((category) => (
                     <div
-                      key={item.path}
-                      className="flex justify-between gap-4 text-sm"
+                      key={category.name}
+                      className="flex items-center gap-2 text-sm"
                     >
-                      <span className="truncate font-mono text-xs">
-                        {item.path}
+                      <span
+                        className="size-2.5 rounded-full"
+                        style={{ backgroundColor: category.color }}
+                      />
+                      <span>{category.name}</span>
+                      <span className="text-onSurface-default-tertiary">
+                        {category.count}
                       </span>
-                      <span>{item.count}</span>
                     </div>
-                  ))
-                )}
+                  ))}
+                </div>
               </CardContent>
             </Card>
-
-            <Card className="border-memBorder-primary">
-              <CardHeader>
-                <CardTitle className="text-sm">Webhook deliveries</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {data.webhook_deliveries.length === 0 ? (
-                  <EmptyState
-                    title="No webhook data"
-                    description="Deliveries appear after webhooks run."
-                  />
-                ) : (
-                  data.webhook_deliveries.map((item) => (
-                    <div
-                      key={item.status}
-                      className="flex items-center justify-between text-sm"
-                    >
-                      <span className="flex items-center gap-2 capitalize">
-                        <span
-                          className="size-2.5 rounded-full"
-                          style={{
-                            backgroundColor:
-                              STATUS_COLORS[item.status] ?? "#a1a1aa",
-                          }}
-                        />
-                        {item.status}
-                      </span>
-                      <span>{item.count}</span>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-          </div>
+          )}
         </>
       )}
     </div>

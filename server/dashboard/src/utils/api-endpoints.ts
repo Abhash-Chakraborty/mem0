@@ -48,6 +48,7 @@ export const CATEGORY_ENDPOINTS = {
   UNASSIGN_MEMORY: (memoryId: string, categoryId: string) =>
     `/categories/memories/${memoryId}/assign/${categoryId}`,
   RECLASSIFY: "/categories/reclassify",
+  AUTO_GENERATE: "/categories/auto-generate",
 } as const;
 
 export const WEBHOOK_ENDPOINTS = {

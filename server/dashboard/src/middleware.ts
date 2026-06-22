@@ -45,12 +45,12 @@ export async function middleware(request: NextRequest) {
 
   if (pathname === "/") {
     return NextResponse.redirect(
-      new URL(hasRefreshToken ? "/dashboard/requests" : "/login", request.url),
+      new URL(hasRefreshToken ? "/dashboard/analytics" : "/login", request.url),
     );
   }
 
   if (pathname === "/dashboard" || pathname === "/dashboard/") {
-    return NextResponse.redirect(new URL("/dashboard/requests", request.url));
+    return NextResponse.redirect(new URL("/dashboard/analytics", request.url));
   }
 
   if (!hasRefreshToken) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, RefreshCw, Tag, Trash2, Wand2 } from "lucide-react";
+import { Plus, RefreshCw, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -148,6 +148,40 @@ export default function CategoriesPage() {
     }
   };
 
+  const autoGenerate = async () => {
+    if (
+      !window.confirm(
+        "Let the AI read your memories and propose new categories? It will create categories it suggests (skipping any that already exist).",
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      const res = await api.post(CATEGORY_ENDPOINTS.AUTO_GENERATE);
+      const count = res.data?.count ?? 0;
+      toast({
+        title:
+          count > 0
+            ? `Generated ${count} ${count === 1 ? "category" : "categories"}`
+            : "No new categories",
+        description:
+          count > 0
+            ? res.data.created.map((c: { name: string }) => c.name).join(", ")
+            : "The AI didn't find new categories to add.",
+        variant: "success",
+      });
+      await refreshAll();
+    } catch (error) {
+      toast({
+        title: "Failed to generate categories",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const reclassifyAll = async () => {
     if (
       !window.confirm(
@@ -228,6 +262,10 @@ export default function CategoriesPage() {
           <Button variant="outline" onClick={refreshAll} disabled={busy}>
             <RefreshCw className="size-4 mr-2" />
             Refresh
+          </Button>
+          <Button variant="outline" onClick={autoGenerate} disabled={busy}>
+            <Sparkles className="size-4 mr-2" />
+            Auto-generate
           </Button>
           <Button
             variant="outline"
