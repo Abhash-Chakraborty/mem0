@@ -13,12 +13,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/use-toast";
 import { getErrorMessage } from "@/lib/error-message";
 import { useApiQuery } from "@/hooks/use-api-query";
 import { api } from "@/utils/api";
 import { CATEGORY_ENDPOINTS, EXPORT_ENDPOINTS } from "@/utils/api-endpoints";
-import { Category } from "@/types/api";
+import { Category, Memory } from "@/types/api";
 
 const INSTANCE_SLUG = (
   process.env.NEXT_PUBLIC_INSTANCE_NAME || "abhash-memory"
@@ -39,6 +40,7 @@ export default function ExportPage() {
   const [categoryId, setCategoryId] = useState("all");
   const [busy, setBusy] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [previewRows, setPreviewRows] = useState<Memory[]>([]);
 
   const buildParams = (format: "json" | "csv") => {
     const params = new URLSearchParams({ format });
@@ -52,11 +54,18 @@ export default function ExportPage() {
   const preview = async () => {
     setBusy(true);
     try {
-      const res = await api.get(
-        `${EXPORT_ENDPOINTS.BASE}?${buildParams("json").toString()}`,
-      );
+      const params = buildParams("json");
+      params.set("limit", "10");
+      const res = await api.get<{
+        total: number;
+        returned: number;
+        memories: Memory[];
+      }>(`${EXPORT_ENDPOINTS.BASE}?${params.toString()}`);
       setPreviewCount(res.data?.total ?? 0);
+      setPreviewRows(res.data?.memories ?? []);
     } catch (error) {
+      setPreviewRows([]);
+      setPreviewCount(null);
       toast({
         title: "Failed to preview export",
         description: getErrorMessage(error),
@@ -176,6 +185,57 @@ export default function ExportPage() {
               </span>
             )}
           </div>
+
+          {previewCount !== null && (
+            <div className="space-y-2 border-t border-memBorder-primary pt-4">
+              {previewCount === 0 ? (
+                <p className="text-sm text-onSurface-default-tertiary">
+                  No memories match these filters.
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs text-onSurface-default-tertiary">
+                    Showing {previewRows.length} of {previewCount} — first rows
+                    of what will be exported.
+                  </p>
+                  {previewRows.map((memory) => (
+                    <div
+                      key={memory.id}
+                      className="rounded-md border border-memBorder-primary p-3 space-y-2"
+                    >
+                      <p className="text-sm">{memory.memory}</p>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-onSurface-default-tertiary">
+                        {memory.user_id && (
+                          <Badge variant="outline">user: {memory.user_id}</Badge>
+                        )}
+                        {memory.agent_id && (
+                          <Badge variant="outline">
+                            agent: {memory.agent_id}
+                          </Badge>
+                        )}
+                        {memory.run_id && (
+                          <Badge variant="outline">run: {memory.run_id}</Badge>
+                        )}
+                        {(memory.categories ?? []).map((category) => (
+                          <Badge
+                            key={category.id}
+                            variant="outline"
+                            className="gap-1"
+                          >
+                            <span
+                              className="size-2 rounded-full"
+                              style={{ backgroundColor: category.color }}
+                            />
+                            {category.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

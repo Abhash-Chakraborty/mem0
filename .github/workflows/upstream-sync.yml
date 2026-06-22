@@ -79,7 +79,8 @@ jobs:
               --base "${BASE_BRANCH}" \
               --head "$BRANCH" \
               --title "sync upstream ${DATE}" \
-              --body "Automated upstream sync. Rebased \`${BASE_BRANCH}\` onto \`upstream/${UPSTREAM_BRANCH}\` cleanly (${AHEAD} upstream commit(s)). CI must pass before merge."
+              --body "Automated upstream sync. Rebased \`${BASE_BRANCH}\` onto \`upstream/${UPSTREAM_BRANCH}\` cleanly (${AHEAD} upstream commit(s)). CI must pass before merge." \
+              || echo "::warning::Branch '$BRANCH' pushed, but PR creation failed. Open it manually: https://github.com/${GITHUB_REPOSITORY}/pull/new/$BRANCH"
             exit 0
           fi
 
@@ -96,7 +97,7 @@ jobs:
           set -e
 
           git add -A
-          git commit -m "merge upstream ${DATE} (CONFLICTS — manual resolution required)"
+          git commit -m "merge upstream ${DATE} (CONFLICTS - manual resolution required) [skip ci]"
           git push origin "$BRANCH"
 
           BODY_FILE="$(mktemp)"
@@ -111,6 +112,8 @@ jobs:
             echo "git add -A && git commit && git push"
             echo '```'
             echo ""
+            echo "> CI is intentionally skipped on this conflict snapshot. After resolving the conflict markers, push a normal commit to run CI."
+            echo ""
             echo "### Conflicted files"
             if [ -n "$CONFLICTS" ]; then
               echo "$CONFLICTS" | sed 's/^/- `/; s/$/`/'
@@ -124,4 +127,5 @@ jobs:
             --head "$BRANCH" \
             --title "sync upstream ${DATE} (conflicts)" \
             --body-file "$BODY_FILE" \
-            --draft
+            --draft \
+            || echo "::warning::Conflict branch '$BRANCH' pushed, but draft PR creation failed. Open it manually: https://github.com/${GITHUB_REPOSITORY}/pull/new/$BRANCH"

@@ -13,6 +13,14 @@ from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
+WEBHOOK_EVENT_DESCRIPTIONS = {
+    "memory.created": "A memory was created.",
+    "memory.updated": "A memory was updated.",
+    "memory.deleted": "A memory was deleted.",
+    "search.performed": "A memory search was performed.",
+    "webhook.test": "A manual test delivery was requested.",
+}
+
 
 class WebhookCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
@@ -70,6 +78,14 @@ def _delivery_response(delivery: WebhookDelivery) -> dict[str, Any]:
 def list_webhooks(_auth=Depends(require_admin), db: Session = Depends(get_db)):
     endpoints = db.scalars(select(WebhookEndpoint).order_by(WebhookEndpoint.created_at.desc())).all()
     return [_endpoint_response(endpoint) for endpoint in endpoints]
+
+
+@router.get("/events")
+def list_webhook_events(_auth=Depends(require_admin)):
+    return [
+        {"event": event, "description": WEBHOOK_EVENT_DESCRIPTIONS[event]}
+        for event in sorted(WEBHOOK_EVENTS)
+    ]
 
 
 @router.post("")

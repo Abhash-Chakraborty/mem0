@@ -1,0 +1,54 @@
+FROM node:20-bookworm-slim AS dashboard-builder
+
+WORKDIR /app
+COPY dashboard/package.json dashboard/pnpm-lock.yaml dashboard/pnpm-workspace.yaml ./
+RUN corepack enable pnpm && pnpm install --frozen-lockfile
+COPY dashboard/ ./
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_API_URL=NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_INSTANCE_NAME=NEXT_PUBLIC_INSTANCE_NAME
+RUN pnpm run build
+
+FROM python:3.12-bookworm AS runtime
+
+ENV PYTHONUNBUFFERED=1
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    ca-certificates \
+    git \
+    nginx \
+    nodejs \
+    npm \
+    postgresql-15 \
+    postgresql-server-dev-15 \
+    postgresql-contrib \
+  && git clone --depth 1 --branch v0.8.0 https://github.com/pgvector/pgvector.git /tmp/pgvector \
+  && make -C /tmp/pgvector \
+  && make -C /tmp/pgvector install \
+  && rm -rf /tmp/pgvector \
+  && apt-get purge -y --auto-remove build-essential git postgresql-server-dev-15 \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+COPY --from=dashboard-builder /app/public /app/dashboard/public
+COPY --from=dashboard-builder /app/.next/standalone /app/dashboard
+COPY --from=dashboard-builder /app/.next/static /app/dashboard/.next/static
+COPY nginx.all-in-one.conf /etc/nginx/conf.d/default.conf
+
+RUN sed -i 's/\r$//' /app/start-all-in-one.sh /app/dashboard/entrypoint.sh \
+  && chmod +x /app/start-all-in-one.sh /app/dashboard/entrypoint.sh \
+  && mkdir -p /var/lib/postgresql/data /app/history \
+  && chown -R postgres:postgres /var/lib/postgresql
+
+EXPOSE 3000 8000
+VOLUME ["/var/lib/postgresql/data", "/app/history"]
+
+CMD ["/app/start-all-in-one.sh"]

@@ -4,6 +4,12 @@ __pycache__/
 *.pyc
 .pytest_cache/
 history/
-dashboard/
+dashboard/.next/
+dashboard/node_modules/
+dashboard/.env*
+dashboard/npm-debug.log*
+dashboard/pnpm-debug.log*
+dashboard/yarn-debug.log*
+dashboard/yarn-error.log*
 docker-compose*.yaml
 README.md

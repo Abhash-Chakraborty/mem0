@@ -1,4 +1,4 @@
-.PHONY: up down clean logs seed wait-api wait-dashboard bootstrap health build run_local reset-admin-password prune-logs prod-pull prod-up prod-down prod-logs
+.PHONY: up down clean logs seed wait-api wait-dashboard bootstrap health build build-all-in-one run_local reset-admin-password prune-logs prod-pull prod-up prod-down prod-logs
 
 OUTPUT ?= text
 API_URL ?= http://localhost:8888
@@ -70,6 +70,9 @@ prod-logs:
 
 build:
 	docker build -t mem0-api-server .
+
+build-all-in-one:
+	docker build -f Dockerfile.all-in-one -t abhash-memory .
 
 run_local:
 	docker run -p 8000:8000 -v $(shell pwd):/app mem0-api-server --env-file .env

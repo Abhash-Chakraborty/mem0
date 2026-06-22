@@ -53,6 +53,7 @@ export const CATEGORY_ENDPOINTS = {
 
 export const WEBHOOK_ENDPOINTS = {
   BASE: "/webhooks",
+  EVENTS: "/webhooks/events",
   BY_ID: (endpointId: string) => `/webhooks/${endpointId}`,
   REGENERATE_SECRET: (endpointId: string) =>
     `/webhooks/${endpointId}/regenerate-secret`,
