@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   build-push:
-    name: Build and push GHCR images
+    name: Build and push GHCR image
     runs-on: ubuntu-latest
     outputs:
       owner_lc: ${{ steps.meta.outputs.owner_lc }}
@@ -41,26 +41,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push API image
+      - name: Build and push all-in-one image
         uses: docker/build-push-action@v6
         with:
           context: server
+          file: server/Dockerfile.all-in-one
           push: true
           tags: |
-            ghcr.io/${{ steps.meta.outputs.owner_lc }}/abhash-memory-api:${{ steps.meta.outputs.sha_tag }}
-            ghcr.io/${{ steps.meta.outputs.owner_lc }}/abhash-memory-api:latest
-
-      - name: Build and push dashboard image
-        uses: docker/build-push-action@v6
-        with:
-          context: server/dashboard
-          push: true
-          build-args: |
-            NEXT_PUBLIC_API_URL=NEXT_PUBLIC_API_URL
-            NEXT_PUBLIC_INSTANCE_NAME=NEXT_PUBLIC_INSTANCE_NAME
-          tags: |
-            ghcr.io/${{ steps.meta.outputs.owner_lc }}/abhash-memory-dashboard:${{ steps.meta.outputs.sha_tag }}
-            ghcr.io/${{ steps.meta.outputs.owner_lc }}/abhash-memory-dashboard:latest
+            ghcr.io/${{ steps.meta.outputs.owner_lc }}/abhash-memory:${{ steps.meta.outputs.sha_tag }}
+            ghcr.io/${{ steps.meta.outputs.owner_lc }}/abhash-memory:latest
 
   deploy:
     name: Deploy on VPS
@@ -92,7 +81,7 @@ jobs:
         run: |
           REMOTE_PATH="${VPS_DEPLOY_PATH:-~/abhash-memory}"
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "mkdir -p $REMOTE_PATH/server"
-          scp -P "$VPS_PORT" server/docker-compose.prod.yaml server/init-db.sh "$VPS_USER@$VPS_HOST:$REMOTE_PATH/server/"
+          scp -P "$VPS_PORT" server/docker-compose.prod.yaml "$VPS_USER@$VPS_HOST:$REMOTE_PATH/server/"
 
       - name: Pull and restart production stack
         env:
@@ -117,5 +106,4 @@ jobs:
              docker compose --env-file .env.production -f docker-compose.prod.yaml pull
              docker compose --env-file .env.production -f docker-compose.prod.yaml up -d
              docker compose --env-file .env.production -f docker-compose.prod.yaml ps
-             docker compose --env-file .env.production -f docker-compose.prod.yaml exec -T mem0 python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/auth/setup-status\", timeout=10).read()"
-             docker compose --env-file .env.production -f docker-compose.prod.yaml exec -T mem0-dashboard wget -qO- http://127.0.0.1:3000/api/health >/dev/null'
+             docker compose --env-file .env.production -f docker-compose.prod.yaml exec -T abhash-memory python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/auth/setup-status\", timeout=10).read(); urllib.request.urlopen(\"http://127.0.0.1:3000/api/health\", timeout=10).read()"'

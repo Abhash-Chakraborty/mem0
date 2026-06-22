@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
+const isWindowsLocalBuild =
+  process.platform === "win32" && process.env.NEXT_STANDALONE !== "true";
+
 const nextConfig = {
-  output: "standalone",
+  output: isWindowsLocalBuild ? undefined : "standalone",
   eslint: {
     ignoreDuringBuilds: false,
   },

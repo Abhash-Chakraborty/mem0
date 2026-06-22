@@ -45,14 +45,18 @@ def export_memories(
     agent_id: str | None = None,
     run_id: str | None = None,
     category_id: str | None = None,
+    limit: int | None = Query(default=None, ge=1, le=10_000),
     _auth=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     memories = attach_categories(db, list_memories(get_memory_instance()))
     memories = _filter_memories(memories, user_id, agent_id, run_id, category_id)
+    total = len(memories)
+    if limit is not None:
+        memories = memories[:limit]
     exported_at = datetime.now(timezone.utc).isoformat()
     if format == "json":
-        return JSONResponse({"exported_at": exported_at, "total": len(memories), "memories": memories})
+        return JSONResponse({"exported_at": exported_at, "total": total, "returned": len(memories), "memories": memories})
 
     output = io.StringIO()
     writer = csv.DictWriter(
