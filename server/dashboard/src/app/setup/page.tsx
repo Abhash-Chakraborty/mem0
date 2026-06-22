@@ -98,7 +98,11 @@ export default function SetupPage() {
   const [isGeneratingInstructions, setIsGeneratingInstructions] =
     useState(false);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api";
+  const publicApiUrl =
+    typeof window !== "undefined"
+      ? new URL(apiUrl, window.location.origin).toString().replace(/\/$/, "")
+      : apiUrl;
 
   useEffect(() => {
     if (step !== 1) {
@@ -713,10 +717,13 @@ export default function SetupPage() {
                       before running this test.
                     </p>
                   )}
-                  <pre className="text-xs bg-surface-default-secondary p-3 rounded font-mono overflow-x-auto">{`curl -X POST ${apiUrl}/memories \\
-  -H "X-API-Key: ${apiKey}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"messages": [{"role": "user", "content": "${testMessage}"}], "user_id": "setup-test"}'`}</pre>
+                  <pre className="text-xs bg-surface-default-secondary p-3 rounded font-mono overflow-x-auto">{`export MEM0_URL="${publicApiUrl}"
+                  export MEM0_API_KEY="<your-api-key>"
+
+                  curl -i --fail-with-body --max-time 120 -X POST "$MEM0_URL/memories" \\
+                    -H "X-API-Key: $MEM0_API_KEY" \\
+                    -H "Content-Type: application/json" \\
+                    -d '{"messages": [{"role": "user", "content": "${testMessage}"}], "user_id": "setup-test"}'`}</pre>
                 </div>
                 {!testSuccess ? (
                   <>
