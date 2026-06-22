@@ -27,8 +27,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-server-dev-15 \
     postgresql-contrib \
   && git clone --depth 1 --branch v0.8.0 https://github.com/pgvector/pgvector.git /tmp/pgvector \
-  && make -C /tmp/pgvector \
-  && make -C /tmp/pgvector install \
+  && make -C /tmp/pgvector clean \
+  && make -C /tmp/pgvector OPTFLAGS="" \
+  && make -C /tmp/pgvector install OPTFLAGS="" \
   && rm -rf /tmp/pgvector \
   && apt-get purge -y --auto-remove build-essential git postgresql-server-dev-15 \
   && rm -rf /var/lib/apt/lists/*
