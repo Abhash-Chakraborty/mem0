@@ -10,6 +10,7 @@ from feature_services import (
     attach_categories,
     category_counts,
     classify_memory,
+    generate_categories,
     get_memory,
     list_memories,
 )
@@ -195,6 +196,19 @@ def unassign_category(
     )
     db.commit()
     return MessageResponse(message="Category assignment removed")
+
+
+@router.post("/auto-generate")
+def auto_generate_categories(_auth=Depends(require_admin), db: Session = Depends(get_db)):
+    """Have the LLM propose categories from existing memories and create the new ones."""
+    try:
+        created = generate_categories(db)
+    except Exception:
+        raise upstream_error()
+    return {
+        "created": [_category_response(category) for category in created],
+        "count": len(created),
+    }
 
 
 @router.post("/reclassify")

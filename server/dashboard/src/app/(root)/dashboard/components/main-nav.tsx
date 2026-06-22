@@ -4,11 +4,11 @@ import * as React from "react";
 import Link from "next/link";
 import {
   Activity,
-  ChartLine,
   ChevronDown,
   FolderInput,
   GalleryVerticalEnd,
   KeyRound,
+  LayoutDashboard,
   Settings,
   Share2,
   Tags,
@@ -63,6 +63,12 @@ export function MainNav({
                   </SidebarGroupLabel>
                 )}
                 {[
+                  {
+                    title: "Dashboard",
+                    url: "/dashboard/analytics",
+                    icon: LayoutDashboard,
+                    active: pathname === "/dashboard/analytics",
+                  },
                   {
                     title: "Requests",
                     url: "/dashboard/requests",
@@ -145,11 +151,6 @@ export function MainNav({
                       title: "Webhooks",
                       url: "/dashboard/webhooks",
                       icon: WebhookIcon,
-                    },
-                    {
-                      title: "Analytics",
-                      url: "/dashboard/analytics",
-                      icon: ChartLine,
                     },
                     {
                       title: "Export",

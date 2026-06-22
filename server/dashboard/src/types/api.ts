@@ -113,15 +113,28 @@ export interface WebhookDelivery {
   created_at: string;
 }
 
+export interface DashboardSeriesPoint {
+  date: string;
+  requests: number;
+  adds: number;
+  retrievals: number;
+}
+
 export interface AnalyticsSummary {
+  total_memories: number;
+  memories_in_range: number;
   total_requests: number;
+  add_events: number;
+  retrieval_events: number;
   success_rate: number;
   average_latency_ms: number;
-  total_memories: number;
+  entities_total: number;
+  entities_by_type: { user: number; agent: number; run: number; app: number };
+  entities_per_request: number;
+  series: DashboardSeriesPoint[];
+  range: string;
+  start: string | null;
+  end: string | null;
   categorized_memories: number;
-  by_path: Array<{ path: string; count: number }>;
-  by_status: Array<{ status: string; count: number }>;
-  by_day: Array<{ date: string; count: number }>;
   category_distribution: Array<{ name: string; color: string; count: number }>;
-  webhook_deliveries: Array<{ status: string; count: number }>;
 }
