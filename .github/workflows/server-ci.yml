@@ -47,12 +47,15 @@ jobs:
           cache-dependency-path: server/requirements.txt
 
       - name: Install API dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Check API syntax and support imports
         run: |
           python -m py_compile *.py routers/*.py scripts/*.py
           python -c "import auth, db, models; print('api support modules ok')"
+
+      - name: Run API tests
+        run: pytest
 
       - name: Build API image
         run: docker build -t abhash-memory-api:test .

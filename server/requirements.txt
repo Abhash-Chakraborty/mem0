@@ -6,6 +6,14 @@ python-dotenv==1.2.2
 psycopg>=3.2.8
 psycopg-pool>=3.2.6,<4.0.0
 
+# spaCy powers mem0's v3 entity extraction, which populates the entity store
+# that the /graph endpoint reads. mem0ai already depends on spaCy, but pin it
+# explicitly so the build is deterministic. The en_core_web_sm model itself is
+# NOT a pip dependency - it is installed in the Dockerfiles via
+# `python -m spacy download en_core_web_sm`. Without that model, entity
+# extraction silently yields nothing and the graph stays empty.
+spacy>=3.7.0,<4.0.0
+
 # Bundled LLM/embedder providers. Extend by adding the provider's package
 # here, rebuilding the image, and updating BUNDLED_*_PROVIDERS in main.py.
 anthropic>=0.39,<1.0

@@ -1,19 +1,35 @@
 """Entity graph endpoint.
 
-Mirrors how mem0 builds graph memory today: it extracts entities into a parallel
-vector collection ({collection}_entities) and links memories that share an entity.
-This router derives a node/edge graph from that entity store — entities are nodes,
-and two entities are connected when they co-occur in the same memory. No external
-graph database is involved (mem0 removed Neo4j/Memgraph/etc. upstream)."""
+Mirrors how mem0 builds graph memory today: its v3 pipeline extracts entities
+into a parallel vector collection ({collection}_entities) and links memories
+that share an entity. This router derives a node/edge graph from that entity
+store - entities are nodes, and two entities are connected when they co-occur in
+the same memory.
+
+This is mem0's CURRENT graph implementation: upstream mem0 removed the external
+graph-database backends (Neo4j/Memgraph/etc.) in the v3 pipeline rewrite
+(mem0ai>=2.0, PR #4805) and replaced them with this vector-store-backed entity
+graph. So there is no separate graph DB to configure - the graph is "real" mem0
+graph memory in the v3 sense, just derived from the entity store rather than a
+property-graph database.
+
+Entity extraction is powered by spaCy (the en_core_web_sm model). If that model
+is missing, extraction silently yields nothing and the entity store stays empty.
+To avoid a misleading "empty graph", every response carries a `status` and
+`entity_extraction_available` so the dashboard can tell a genuinely empty graph
+apart from a misconfigured one, and the server logs the reason."""
 
 import itertools
+import logging
 from collections import defaultdict
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from auth import verify_auth
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from server_state import get_memory_instance
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/graph", tags=["graph"])
 
@@ -21,6 +37,12 @@ SCAN_LIMIT = 5_000
 # Cap how many entities a single memory may fan out into edges. A memory that
 # mentions N entities would otherwise produce N*(N-1)/2 edges; this bounds it.
 MAX_ENTITIES_PER_MEMORY = 20
+
+# Identifies the kind of graph backing this endpoint, so the dashboard can be
+# explicit that this is a derived entity graph, not an external graph DB.
+GRAPH_SOURCE = "mem0_entity_store"
+
+GraphStatus = Literal["ok", "empty", "extractor_unavailable", "error"]
 
 
 class GraphNode(BaseModel):
@@ -40,27 +62,59 @@ class GraphEdge(BaseModel):
 class GraphResponse(BaseModel):
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+    # Diagnostics so the graph never silently returns an unexplained empty set.
+    status: GraphStatus = "ok"
+    detail: Optional[str] = None
+    source: str = GRAPH_SOURCE
+    entity_extraction_available: bool = True
 
 
 def _scope_filters(user_id: Optional[str], agent_id: Optional[str], run_id: Optional[str]) -> dict[str, str]:
     return {k: v for k, v in {"user_id": user_id, "agent_id": agent_id, "run_id": run_id}.items() if v}
 
 
-def _list_entities(filters: dict[str, str], limit: int) -> list[Any]:
-    """Return raw entity rows from the entity store.
+def _entity_extraction_available() -> bool:
+    """Best-effort check that mem0's spaCy entity extractor can run.
 
-    The entity store is created lazily by the SDK and raises if the entities
-    collection was never written (no memories added yet). Treat that as empty.
+    The /graph data is only ever populated when entity extraction works, which
+    requires spaCy plus the en_core_web_sm model. We check for the model package
+    rather than loading the full pipeline so the probe stays cheap. Any failure
+    (spaCy missing, model missing, import error) is treated as unavailable.
+    """
+    try:
+        import spacy
+
+        return bool(spacy.util.is_package("en_core_web_sm"))
+    except Exception:
+        return False
+
+
+def _list_entities(filters: dict[str, str], limit: int) -> tuple[list[Any], Optional[str]]:
+    """Return (rows, error) from the entity store.
+
+    The entity store is created lazily by the SDK. A missing/never-written
+    entities collection is normal before any memory is added and is reported as
+    an empty result with no error. A genuine failure (DB down, bad config) is
+    returned as an error string so the caller can surface it instead of
+    pretending the graph is empty.
     """
     try:
         store = get_memory_instance().entity_store
         results = store.list(filters=filters or None, top_k=limit)
-    except Exception:
-        return []
+    except Exception as exc:  # noqa: BLE001 - we want to report any failure
+        message = f"{type(exc).__name__}: {exc}"
+        logger.warning("Graph entity store query failed: %s", message, exc_info=True)
+        # The SDK raises when the entities collection has simply never been
+        # created yet (no memories with extractable entities). Treat the
+        # "relation/table/collection does not exist" family as empty, not error.
+        lowered = str(exc).lower()
+        if any(token in lowered for token in ("does not exist", "no such table", "not found", "undefinedtable")):
+            return [], None
+        return [], message
     # vector_store.list may return [[rows]] or [rows] depending on the backend.
     if results and isinstance(results, list) and results and isinstance(results[0], list):
-        return results[0]
-    return results or []
+        return results[0], None
+    return results or [], None
 
 
 @router.get("", response_model=GraphResponse)
@@ -71,7 +125,8 @@ def get_graph(
     limit: int = Query(SCAN_LIMIT, ge=1, le=SCAN_LIMIT),
     _auth=Depends(verify_auth),
 ):
-    rows = _list_entities(_scope_filters(user_id, agent_id, run_id), limit)
+    extraction_available = _entity_extraction_available()
+    rows, error = _list_entities(_scope_filters(user_id, agent_id, run_id), limit)
 
     nodes: dict[str, GraphNode] = {}
     memory_to_entities: dict[str, list[str]] = defaultdict(list)
@@ -103,4 +158,37 @@ def get_graph(
         for (source, target), weight in edge_weights.items()
     ]
 
-    return GraphResponse(nodes=list(nodes.values()), edges=edges)
+    node_list = list(nodes.values())
+    status, detail = _classify(node_list, error, extraction_available)
+    if status == "extractor_unavailable":
+        logger.warning(
+            "Graph is empty and the spaCy en_core_web_sm model is unavailable - "
+            "entity extraction cannot run, so no graph can be built. Install the "
+            "model in the image (python -m spacy download en_core_web_sm)."
+        )
+
+    return GraphResponse(
+        nodes=node_list,
+        edges=edges,
+        status=status,
+        detail=detail,
+        source=GRAPH_SOURCE,
+        entity_extraction_available=extraction_available,
+    )
+
+
+def _classify(
+    nodes: list[GraphNode], error: Optional[str], extraction_available: bool
+) -> tuple[GraphStatus, Optional[str]]:
+    if nodes:
+        # Data exists; report ok even if the extractor probe was pessimistic.
+        return "ok", None
+    if error:
+        return "error", f"Graph storage query failed: {error}"
+    if not extraction_available:
+        return (
+            "extractor_unavailable",
+            "Entity extraction is unavailable (the spaCy en_core_web_sm model is "
+            "not installed), so no graph can be built from your memories.",
+        )
+    return "empty", "No entities have been extracted from your memories yet."

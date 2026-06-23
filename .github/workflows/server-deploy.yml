@@ -54,6 +54,12 @@ jobs:
           file: server/Dockerfile.all-in-one
           push: true
           platforms: linux/amd64,linux/arm64
+          # GitHub Actions layer cache. The arm64 leg compiles pgvector under
+          # QEMU, which is slow; caching unchanged layers across runs avoids
+          # recompiling it every push.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
           tags: |
             ghcr.io/${{ steps.meta.outputs.owner_lc }}/abhash-memory:${{ steps.meta.outputs.sha_tag }}
             ghcr.io/${{ steps.meta.outputs.owner_lc }}/abhash-memory:latest

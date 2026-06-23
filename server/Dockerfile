@@ -4,7 +4,11 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+# mem0's v3 entity extraction (which feeds the /graph endpoint's entity store)
+# needs the en_core_web_sm spaCy model. Bake it in so extraction works
+# offline and deterministically instead of downloading it at runtime.
+RUN pip install --no-cache-dir -r requirements.txt \
+  && python -m spacy download en_core_web_sm
 
 COPY . .
 

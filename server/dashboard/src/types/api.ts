@@ -60,9 +60,18 @@ export interface GraphEdge {
   weight: number;
 }
 
+export type GraphStatus = "ok" | "empty" | "extractor_unavailable" | "error";
+
 export interface GraphResponse {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  // Diagnostics from the backend so the UI can distinguish a genuinely empty
+  // graph from a misconfigured one. Optional for backward compatibility with
+  // older server builds that did not return them.
+  status?: GraphStatus;
+  detail?: string | null;
+  source?: string;
+  entity_extraction_available?: boolean;
 }
 
 export interface Category {

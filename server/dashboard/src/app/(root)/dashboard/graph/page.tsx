@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { RefreshCw, Share2 } from "lucide-react";
+import { AlertTriangle, RefreshCw, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
@@ -165,6 +166,7 @@ export default function GraphPage() {
   const {
     data: graph = { nodes: [], edges: [] },
     isLoading,
+    error: graphError,
     refetch,
   } = useApiQuery<GraphResponse>(
     async () => {
@@ -236,14 +238,51 @@ export default function GraphPage() {
     return groups;
   }, [entities]);
 
+  // Distinguish a genuinely empty graph from a broken/misconfigured one so the
+  // UI never silently shows "No graph yet" when the backend actually failed or
+  // entity extraction is unavailable.
+  const diagnostic = useMemo<{
+    variant: "destructive" | "default";
+    title: string;
+    message: string;
+  } | null>(() => {
+    if (graphError) {
+      return {
+        variant: "destructive",
+        title: "Failed to load graph",
+        message: graphError,
+      };
+    }
+    if (graph.status === "error") {
+      return {
+        variant: "destructive",
+        title: "Graph storage error",
+        message:
+          graph.detail ??
+          "The graph store could not be queried. Check the server logs.",
+      };
+    }
+    if (graph.status === "extractor_unavailable") {
+      return {
+        variant: "default",
+        title: "Entity extraction unavailable",
+        message:
+          graph.detail ??
+          "The spaCy entity model is not installed, so no graph can be built from your memories.",
+      };
+    }
+    return null;
+  }, [graphError, graph.status, graph.detail]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold font-fustat">Graph</h1>
           <p className="text-xs text-onSurface-default-tertiary mt-0.5">
-            Entities extracted from your memories, linked when they appear in the
-            same memory.
+            mem0 entity graph: entities extracted from your memories, linked when
+            they appear in the same memory. Derived from mem0&apos;s entity store
+            (its v3 graph implementation) - no external graph database.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -283,6 +322,20 @@ export default function GraphPage() {
 
       {isLoading ? (
         <TableSkeleton rows={6} columns={1} />
+      ) : diagnostic ? (
+        <Alert variant={diagnostic.variant}>
+          <AlertTriangle className="size-4" />
+          <AlertTitle>{diagnostic.title}</AlertTitle>
+          <AlertDescription>
+            <p>{diagnostic.message}</p>
+            {graph.status === "extractor_unavailable" && (
+              <p className="mt-2 text-xs text-onSurface-default-tertiary">
+                Install the model in the API image with{" "}
+                <code>python -m spacy download en_core_web_sm</code> and redeploy.
+              </p>
+            )}
+          </AlertDescription>
+        </Alert>
       ) : nodes.length === 0 ? (
         <EmptyState
           title="No graph yet"
