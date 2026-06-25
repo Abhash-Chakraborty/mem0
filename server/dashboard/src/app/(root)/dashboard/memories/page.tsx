@@ -26,6 +26,8 @@ import { useApiQuery } from "@/hooks/use-api-query";
 import { Memory } from "@/types/api";
 
 const PAGE_SIZE = 20;
+// Keep in sync with ALL_MEMORIES_LIMIT in server/main.py.
+const MEMORY_FETCH_LIMIT = 1000;
 
 export default function MemoriesPage() {
   const [userId, setUserId] = useState("");
@@ -40,7 +42,9 @@ export default function MemoriesPage() {
     refetch,
   } = useApiQuery<Memory[]>(
     async () => {
-      const params = userId.trim() ? { user_id: userId.trim() } : undefined;
+      const params = userId.trim()
+        ? { user_id: userId.trim(), top_k: MEMORY_FETCH_LIMIT }
+        : { top_k: MEMORY_FETCH_LIMIT };
       const res = await api.get(MEMORY_ENDPOINTS.BASE, { params });
       const raw = res.data?.results ?? res.data ?? [];
       return Array.isArray(raw) ? raw : [];
