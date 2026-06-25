@@ -1,0 +1,36 @@
+# Paths this fork intentionally REMOVES from upstream (mem0ai/mem0).
+#
+# The upstream-sync workflow re-applies these deletions after every merge so that
+# files/folders the fork deleted do NOT silently reappear when upstream later
+# touches them (the "deleted folder comes back" problem).
+#
+# Format: one path per line. Lines starting with '#' and blank lines are ignored.
+# A path may be a file or a directory; directories are removed recursively.
+# Editing this file is the SINGLE control point for "what the fork drops".
+
+# --- Upstream CI/CD workflows the fork does not use (it ships its own) ---
+.github/workflows/cd.yml
+.github/workflows/ci.yml
+.github/workflows/ci-gate.yml
+.github/workflows/cli-node-cd.yml
+.github/workflows/cli-node-ci.yml
+.github/workflows/cli-python-cd.yml
+.github/workflows/cli-python-ci.yml
+.github/workflows/docs-llms-txt-check.yml
+.github/workflows/issue-labeler.yml
+.github/workflows/openclaw-cd.yml
+.github/workflows/openclaw-checks.yml
+.github/workflows/opencode-plugin-cd.yml
+.github/workflows/opencode-plugin-checks.yml
+.github/workflows/pi-agent-plugin-cd.yml
+.github/workflows/pi-agent-plugin-checks.yml
+.github/workflows/release.yml
+.github/workflows/stale.yml
+.github/workflows/ts-sdk-cd.yml
+.github/workflows/ts-sdk-ci.yml
+.github/workflows/vercel-ai-cd.yml
+
+# --- Self-hosted dashboard: cloud-upgrade UI removed from this fork ---
+server/.env.example
+server/dashboard/src/components/self-hosted/locked-page.tsx
+server/dashboard/src/components/self-hosted/upgrade-banner.tsx
