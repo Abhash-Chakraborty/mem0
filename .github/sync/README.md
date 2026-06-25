@@ -12,7 +12,7 @@ and how to resolve conflicts — including with `git rerere`.
 | `abhash-main` | Deploy trunk. Builds/pushes the Dokploy image (`server/**` pushes). |
 | `integration/self-hosted-overhaul` | Staging branch for the self-hosted overhaul. |
 | `main` | Plain mirror of upstream — kept only as a reference point. |
-| `integration/upstream-sync-<date>` | Throwaway branches the sync workflow opens PRs from. |
+| `staging/upstream-sync-<date>` | Branch the sync workflow creates off `abhash-main`, merges upstream into, and opens a PR from (base `abhash-main`). |
 | `upstream/main` (remote) | `mem0ai/mem0` `main`. The thing we sync from. |
 
 ## Why the sync action was not running
@@ -43,7 +43,7 @@ the PR (the run will push the branch but skip the PR with a warning).
 
 1. Checks out `BASE_BRANCH` (default `abhash-main`; selectable when run manually).
 2. Enables `rerere` and seeds it from the committed cache in `.github/sync/rr-cache`.
-3. `git merge`es `upstream/main` into a fresh `integration/upstream-sync-<date>`
+3. `git merge`es `upstream/main` into a fresh `staging/upstream-sync-<date>`
    branch (merge, **not** rebase — the published history is never rewritten).
 4. Re-applies the fork's intentional deletions from
    [`removed-paths.txt`](./removed-paths.txt) so removed files/folders never
@@ -80,7 +80,7 @@ git config --global rerere.autoupdate true   # auto-stage replayed resolutions
 
 ```bash
 git fetch origin
-git checkout integration/upstream-sync-<date>
+git checkout staging/upstream-sync-<date>
 
 # If it was a clean draft snapshot, redo the merge locally to get live markers:
 #   git merge upstream/main
@@ -125,7 +125,7 @@ git add path/to/file
 ```bash
 git fetch upstream
 git switch abhash-main
-git switch -c integration/upstream-sync-$(date +%Y%m%d)
+git switch -c staging/upstream-sync-$(date +%Y%m%d)
 git merge upstream/main
 # resolve conflicts (rerere helps), re-apply removed paths:
 while read -r p; do [ -n "$p" ] && [[ "$p" != \#* ]] && git rm -rq --ignore-unmatch -- "$p"; done < .github/sync/removed-paths.txt
