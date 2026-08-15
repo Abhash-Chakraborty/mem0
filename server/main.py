@@ -19,7 +19,6 @@ from errors import (
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
-from mem0.exceptions import ValidationError as Mem0ValidationError
 from pydantic import BaseModel, Field
 from rate_limit import limiter
 from routers import api_keys as api_keys_router
@@ -49,6 +48,8 @@ from feature_services import (
 )
 from models import MemoryCategory, RequestLog, User
 from sqlalchemy import delete, func, select
+
+from mem0.exceptions import ValidationError as Mem0ValidationError
 
 load_dotenv()
 
@@ -212,14 +213,16 @@ class MemoryCreate(BaseModel):
     agent_id: Optional[str] = None
     run_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    expiration_date: Optional[str] = Field(None, description="Expiration date in YYYY-MM-DD format.")
     infer: Optional[bool] = Field(None, description="Whether to extract facts from messages. Defaults to True.")
     memory_type: Optional[str] = Field(None, description="Type of memory to store (e.g. 'core').")
     prompt: Optional[str] = Field(None, description="Custom prompt to use for fact extraction.")
 
 
 class MemoryUpdate(BaseModel):
-    text: str = Field(..., description="New content to update the memory with.")
+    text: Optional[str] = Field(None, description="New content to update the memory with.")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Metadata to update.")
+    expiration_date: Optional[str] = Field(None, description="Expiration date in YYYY-MM-DD format, or null to clear.")
 
 
 class SearchRequest(BaseModel):
@@ -231,6 +234,7 @@ class SearchRequest(BaseModel):
     top_k: Optional[int] = Field(None, description="Maximum number of results to return.")
     threshold: Optional[float] = Field(None, description="Minimum similarity score for results.")
     explain: Optional[bool] = Field(None, description="Include score details for each search result.")
+    show_expired: Optional[bool] = Field(None, description="Include expired memories.")
 
 
 class GenerateInstructionsRequest(BaseModel):
@@ -423,7 +427,7 @@ def add_memory(memory_create: MemoryCreate, _auth=Depends(verify_auth)):
 
 
 ALL_MEMORIES_LIMIT = 1000
-_RESERVED_PAYLOAD_KEYS = {"data", "user_id", "agent_id", "run_id", "hash", "created_at", "updated_at"}
+_RESERVED_PAYLOAD_KEYS = {"data", "user_id", "agent_id", "run_id", "hash", "created_at", "updated_at", "expiration_date"}
 
 
 def _serialize_memory(row: Any) -> Dict[str, Any]:
@@ -435,6 +439,7 @@ def _serialize_memory(row: Any) -> Dict[str, Any]:
         "agent_id": payload.get("agent_id"),
         "run_id": payload.get("run_id"),
         "hash": payload.get("hash"),
+        "expiration_date": payload.get("expiration_date"),
         "metadata": {k: v for k, v in payload.items() if k not in _RESERVED_PAYLOAD_KEYS},
         "created_at": payload.get("created_at"),
         "updated_at": payload.get("updated_at"),
@@ -454,6 +459,7 @@ def get_all_memories(
     run_id: Optional[str] = None,
     agent_id: Optional[str] = None,
     top_k: Optional[int] = Query(None, ge=0, le=ALL_MEMORIES_LIMIT),
+    show_expired: bool = Query(False),
     _auth=Depends(verify_auth),
 ):
     """Retrieve stored memories. Lists all memories when no identifier is provided (admin only)."""
@@ -462,13 +468,15 @@ def get_all_memories(
             auth_type = getattr(request.state, "auth_type", "none")
             if _auth is not None and _auth.role != "admin" and auth_type not in {"admin_api_key", "disabled"}:
                 raise HTTPException(status_code=403, detail="Admin role required to list all memories.")
+            # Admin all-memory listing is intentionally raw; scoped get_all below applies expiry visibility.
             return _list_all_memories(limit=top_k if top_k is not None else ALL_MEMORIES_LIMIT)
         filters = {
-            k: v for k, v in {"user_id": user_id, "run_id": run_id, "agent_id": agent_id}.items() if v is not None
+            k: v for k, v in {"user_id": user_id, "run_id": run_id, "agent_id": agent_id}.items() if v
         }
         params = {"filters": filters}
         if top_k is not None:
             params["top_k"] = top_k
+        params["show_expired"] = show_expired
         return get_memory_instance().get_all(**params)
     except HTTPException:
         raise
@@ -493,7 +501,7 @@ def search_memories(search_req: SearchRequest, _auth=Depends(verify_auth)):
         deprecated_keys = []
         for entity_key in ("user_id", "agent_id", "run_id"):
             entity_val = getattr(search_req, entity_key, None)
-            if entity_val is not None:
+            if entity_val:
                 filters[entity_key] = entity_val
                 deprecated_keys.append(entity_key)
         if deprecated_keys:
@@ -509,6 +517,8 @@ def search_memories(search_req: SearchRequest, _auth=Depends(verify_auth)):
             params["threshold"] = search_req.threshold
         if search_req.explain is not None:
             params["explain"] = search_req.explain
+        if search_req.show_expired is not None:
+            params["show_expired"] = search_req.show_expired
         response = get_memory_instance().search(query=search_req.query, filters=filters, **params)
         try:
             with SessionLocal() as session:
@@ -532,9 +542,15 @@ def search_memories(search_req: SearchRequest, _auth=Depends(verify_auth)):
 def update_memory(memory_id: str, updated_memory: MemoryUpdate, _auth=Depends(verify_auth)):
     """Update an existing memory."""
     try:
-        response = get_memory_instance().update(
-            memory_id=memory_id, data=updated_memory.text, metadata=updated_memory.metadata
-        )
+        fields_set = getattr(updated_memory, "model_fields_set", getattr(updated_memory, "__fields_set__", set()))
+        params = {"memory_id": memory_id}
+        if "text" in fields_set:
+            params["data"] = updated_memory.text
+        if "metadata" in fields_set:
+            params["metadata"] = updated_memory.metadata
+        if "expiration_date" in fields_set:
+            params["expiration_date"] = updated_memory.expiration_date
+        response = get_memory_instance().update(**params)
         try:
             memory = _serialize_memory(get_memory_instance().vector_store.get(vector_id=memory_id))
             with SessionLocal() as session:
@@ -590,7 +606,7 @@ def delete_all_memories(
         raise HTTPException(status_code=400, detail="At least one identifier is required.")
     try:
         params = {
-            k: v for k, v in {"user_id": user_id, "run_id": run_id, "agent_id": agent_id}.items() if v is not None
+            k: v for k, v in {"user_id": user_id, "run_id": run_id, "agent_id": agent_id}.items() if v
         }
         get_memory_instance().delete_all(**params)
         return MessageResponse(message="All relevant memories deleted")
