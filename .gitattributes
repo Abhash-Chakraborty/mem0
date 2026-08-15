@@ -1,0 +1,4 @@
+# git rerere matches conflict preimages byte for byte. Checking these out with
+# CRLF on Windows would stop every recorded resolution from ever matching, so
+# the sync cache is pinned to LF regardless of core.autocrlf.
+.github/sync/rr-cache/** -text
