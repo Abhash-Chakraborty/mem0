@@ -543,7 +543,10 @@ def search_memories(search_req: SearchRequest, _auth=Depends(verify_auth)):
 def update_memory(memory_id: str, updated_memory: MemoryUpdate, _auth=Depends(verify_auth)):
     """Update an existing memory."""
     try:
-        fields_set = getattr(updated_memory, "model_fields_set", getattr(updated_memory, "__fields_set__", set()))
+        # Not getattr(..., getattr(...)): Python evaluates the default eagerly,
+        # so the Pydantic v1 fallback fired a deprecation warning on every
+        # update even though model_fields_set was present.
+        fields_set = updated_memory.model_fields_set
         params = {"memory_id": memory_id}
         if "text" in fields_set:
             params["data"] = updated_memory.text

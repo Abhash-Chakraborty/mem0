@@ -57,6 +57,13 @@ jobs:
       - name: Run API tests
         run: pytest
 
+      # The repo-root suite carries upstream's REST parameter-forwarding tests,
+      # which guard server/main.py against silently dropping request fields.
+      # They live outside server/ so the job above never reached them.
+      - name: Run upstream server contract tests
+        working-directory: ${{ github.workspace }}
+        run: pytest tests/test_server_params.py
+
       - name: Build API image
         run: docker build -t abhash-memory-api:test .
 

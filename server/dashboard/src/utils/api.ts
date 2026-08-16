@@ -36,9 +36,7 @@ const refreshAccessToken = async () => {
   return data.access_token as string;
 };
 
-const createApi = (): AxiosInstance & {
-  postStream: (url: string, data: unknown) => Promise<Response>;
-} => {
+const createApi = (): AxiosInstance => {
   const api = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL,
   });
@@ -83,31 +81,7 @@ const createApi = (): AxiosInstance & {
     },
   );
 
-  const postStream = async (url: string, data: unknown): Promise<Response> => {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${url}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: cachedToken ? `Bearer ${cachedToken}` : "",
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (response.status === 401) {
-      handleTokenError();
-      redirectToLogin();
-      throw new Error("Unauthorized");
-    }
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || "Request failed");
-    }
-
-    return response;
-  };
-
-  return Object.assign(api, { postStream });
+  return api;
 };
 
 export const api = createApi();

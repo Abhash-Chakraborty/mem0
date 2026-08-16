@@ -23,6 +23,11 @@ google-generativeai>=0.8,<1.0
 sqlalchemy>=2.0,<3.0
 alembic>=1.13,<2.0
 passlib[bcrypt]>=1.7,<2.0
+# Load-bearing pin, not arbitrary. passlib 1.7.4 probes bcrypt.__about__, which
+# bcrypt removed in 4.1. The probe failure is swallowed and the next hash() call
+# fails with a misleading "password cannot be longer than 72 bytes" - on inputs
+# well under 72 bytes - which breaks API key creation and login. Do not relax
+# this without moving off passlib; existing password hashes must still verify.
 bcrypt==4.0.1
 python-jose[cryptography]>=3.3,<4.0
 cryptography>46.0.4

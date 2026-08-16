@@ -87,7 +87,10 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+# "server" is on the path because the self-hosted server uses flat imports
+# (`import telemetry`, `from routers import graph`), so tests that import
+# server.main need its directory importable as a root too.
+pythonpath = [".", "server"]
 
 [tool.hatch.build]
 include = [
