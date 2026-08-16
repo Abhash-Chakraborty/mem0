@@ -205,3 +205,41 @@ export interface LogListResponse {
   logs: LogEntry[];
   buffer_size: number;
 }
+
+/** Per-result score breakdown, returned when a search is run with explain. */
+export interface ScoreDetails {
+  semantic_score: number;
+  bm25_score: number;
+  entity_boost: number;
+  raw_score: number;
+  max_possible_score: number;
+  final_score: number;
+  threshold: number;
+}
+
+export interface RecallResult {
+  id: string;
+  memory?: string;
+  user_id?: string;
+  agent_id?: string;
+  run_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  metadata?: Record<string, unknown> | null;
+  score?: number;
+  score_details?: ScoreDetails;
+}
+
+export interface RecallResponse {
+  results?: RecallResult[];
+}
+
+export interface MemoryHistoryEntry {
+  id?: string | number;
+  memory_id?: string;
+  old_memory?: string | null;
+  new_memory?: string | null;
+  event?: string;
+  created_at?: string;
+  updated_at?: string;
+}

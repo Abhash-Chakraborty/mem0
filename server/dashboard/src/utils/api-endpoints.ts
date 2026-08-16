@@ -84,3 +84,8 @@ export const SYSTEM_ENDPOINTS = {
   LOGS: "/system/logs",
   LOG_STREAM: "/system/logs/stream",
 } as const;
+
+export const RECALL_ENDPOINTS = {
+  SEARCH: "/search",
+  HISTORY: (memoryId: string) => `/memories/${memoryId}/history`,
+} as const;

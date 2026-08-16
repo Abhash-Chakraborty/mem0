@@ -6,6 +6,7 @@ import {
   Activity,
   Archive,
   ChevronDown,
+  FlaskConical,
   FolderInput,
   GalleryVerticalEnd,
   HeartPulse,
@@ -55,6 +56,7 @@ const ACTIVITY_ITEMS: NavItem[] = [
   { title: "Memories", url: "/dashboard/memories", icon: GalleryVerticalEnd },
   { title: "Entities", url: "/dashboard/entities", icon: Users },
   { title: "Graph", url: "/dashboard/graph", icon: Share2 },
+  { title: "Recall", url: "/dashboard/recall", icon: FlaskConical },
 ];
 
 const TOOL_ITEMS: NavItem[] = [
