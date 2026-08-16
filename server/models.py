@@ -119,6 +119,10 @@ class WebhookEndpoint(Base):
     url: Mapped[str] = mapped_column(Text)
     events: Mapped[list[str]] = mapped_column(JSON, default=list)
     secret: Mapped[str] = mapped_column(Text)
+    # How the payload is shaped on the wire: "generic" posts the raw signed
+    # event, "discord" and "slack" post the message format those services
+    # render. Defaults to generic so existing endpoints keep their contract.
+    channel: Mapped[str] = mapped_column(String(32), default="generic")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(

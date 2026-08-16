@@ -4,7 +4,13 @@ from typing import Any
 from auth import require_admin
 from db import SessionLocal, get_db
 from fastapi import APIRouter, Depends, HTTPException
-from feature_services import WEBHOOK_EVENTS, generate_webhook_secret, process_due_webhooks, utcnow
+from feature_services import (
+    WEBHOOK_CHANNELS,
+    WEBHOOK_EVENTS,
+    generate_webhook_secret,
+    process_due_webhooks,
+    utcnow,
+)
 from models import WebhookDelivery, WebhookEndpoint
 from pydantic import BaseModel, Field, HttpUrl
 from schemas import MessageResponse
@@ -19,6 +25,9 @@ WEBHOOK_EVENT_DESCRIPTIONS = {
     "memory.deleted": "A memory was deleted.",
     "search.performed": "A memory search was performed.",
     "webhook.test": "A manual test delivery was requested.",
+    "backup.completed": "A backup finished and passed verification.",
+    "backup.failed": "A backup did not complete.",
+    "system.degraded": "A health check reported a degraded subsystem.",
 }
 
 
@@ -26,13 +35,24 @@ class WebhookCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     url: HttpUrl
     events: list[str]
+    channel: str = Field(default="generic")
 
 
 class WebhookUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=120)
     url: HttpUrl | None = None
     events: list[str] | None = None
+    channel: str | None = None
     is_active: bool | None = None
+
+
+def _validate_channel(channel: str) -> str:
+    if channel not in WEBHOOK_CHANNELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported channel. Choose one of: {', '.join(WEBHOOK_CHANNELS)}.",
+        )
+    return channel
 
 
 def _validate_events(events: list[str]) -> list[str]:
@@ -50,6 +70,7 @@ def _endpoint_response(endpoint: WebhookEndpoint, include_secret: bool = False) 
         "name": endpoint.name,
         "url": endpoint.url,
         "events": endpoint.events,
+        "channel": endpoint.channel,
         "is_active": endpoint.is_active,
         "created_at": endpoint.created_at.isoformat(),
         "updated_at": endpoint.updated_at.isoformat(),
@@ -83,7 +104,7 @@ def list_webhooks(_auth=Depends(require_admin), db: Session = Depends(get_db)):
 @router.get("/events")
 def list_webhook_events(_auth=Depends(require_admin)):
     return [
-        {"event": event, "description": WEBHOOK_EVENT_DESCRIPTIONS[event]}
+        {"event": event, "description": WEBHOOK_EVENT_DESCRIPTIONS.get(event, event)}
         for event in sorted(WEBHOOK_EVENTS)
     ]
 
@@ -97,6 +118,7 @@ def create_webhook(body: WebhookCreate, _auth=Depends(require_admin), db: Sessio
         name=name,
         url=str(body.url),
         events=_validate_events(body.events),
+        channel=_validate_channel(body.channel),
         secret=generate_webhook_secret(),
     )
     db.add(endpoint)
@@ -135,6 +157,8 @@ def update_webhook(endpoint_id: str, body: WebhookUpdate, _auth=Depends(require_
         endpoint.url = str(body.url)
     if body.events is not None:
         endpoint.events = _validate_events(body.events)
+    if body.channel is not None:
+        endpoint.channel = _validate_channel(body.channel)
     if body.is_active is not None:
         endpoint.is_active = body.is_active
     db.commit()

@@ -68,6 +68,22 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _notify(session: Session, event: str, payload: dict[str, Any]) -> None:
+    """Queue a webhook for a backup outcome.
+
+    Imported lazily: feature_services imports models, and a module-level import
+    here would create a cycle once feature_services grows to need backup state.
+    Never allowed to fail the backup - a notification that cannot be queued is
+    strictly less important than the dump that just succeeded or failed.
+    """
+    try:
+        from feature_services import enqueue_webhook_event
+
+        enqueue_webhook_event(session, event, payload)
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not queue %s notification", event, exc_info=True)
+
+
 def _pg_env() -> dict[str, str]:
     env = os.environ.copy()
     env["PGPASSWORD"] = settings.POSTGRES_PASSWORD
@@ -187,11 +203,13 @@ def run_backup(session: Session, *, kind: str = "manual") -> Backup:
         record.verified_at = _utcnow()
         session.commit()
         logger.info("Backup %s completed (%d bytes)", record.filename, total)
+        _notify(session, "backup.completed", {"filename": record.filename, "size_bytes": total})
     except BackupError as exc:
         record.status = "failed"
         record.error = str(exc)
         record.completed_at = _utcnow()
         session.commit()
+        _notify(session, "backup.failed", {"filename": record.filename, "error": record.error})
         for leftover in (vector_path, app_path):
             leftover.unlink(missing_ok=True)
         raise
@@ -200,6 +218,7 @@ def run_backup(session: Session, *, kind: str = "manual") -> Backup:
         record.error = f"unexpected error: {exc}"
         record.completed_at = _utcnow()
         session.commit()
+        _notify(session, "backup.failed", {"filename": record.filename, "error": record.error})
         for leftover in (vector_path, app_path):
             leftover.unlink(missing_ok=True)
         raise

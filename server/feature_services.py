@@ -23,7 +23,24 @@ from settings import (
 )
 
 RESERVED_PAYLOAD_KEYS = {"data", "user_id", "agent_id", "run_id", "hash", "created_at", "updated_at", "text_lemmatized"}
-WEBHOOK_EVENTS = {"memory.created", "memory.updated", "memory.deleted", "search.performed", "webhook.test"}
+WEBHOOK_EVENTS = {
+    "memory.created",
+    "memory.updated",
+    "memory.deleted",
+    "search.performed",
+    "webhook.test",
+    # Operational events. These are the ones worth routing to a chat channel:
+    # they are rare, and each one wants a human to look at something.
+    "backup.completed",
+    "backup.failed",
+    "system.degraded",
+}
+
+WEBHOOK_CHANNELS = ("generic", "discord", "slack")
+
+# Events that describe a problem rather than routine activity. Chat formatters
+# use this to colour the message, so a failure does not look like a success.
+ALERT_EVENTS = {"backup.failed", "system.degraded"}
 
 
 def utcnow() -> datetime:
@@ -327,8 +344,67 @@ def enqueue_webhook_event(db: Session, event_type: str, payload: dict[str, Any])
     return count
 
 
+def _event_summary(event_type: str, payload: dict[str, Any]) -> str:
+    """One human-readable line describing the event, for chat channels."""
+    data = payload.get("data") or {}
+    if event_type == "backup.completed":
+        return f"Backup completed: {data.get('filename', 'unknown')}"
+    if event_type == "backup.failed":
+        return f"Backup FAILED: {data.get('error', 'no detail')}"
+    if event_type == "system.degraded":
+        sections = data.get("sections") or []
+        joined = ", ".join(sections) if sections else "unknown"
+        return f"System degraded: {joined}"
+    if event_type == "search.performed":
+        return f"Search returned {data.get('result_count', 0)} result(s)"
+    if event_type.startswith("memory."):
+        memory = data.get("memory") or {}
+        text = memory.get("memory") or memory.get("data") or ""
+        verb = event_type.split(".", 1)[1]
+        return f"Memory {verb}: {str(text)[:160]}" if text else f"Memory {verb}"
+    return event_type
+
+
+def format_payload(endpoint: WebhookEndpoint, delivery: WebhookDelivery) -> bytes:
+    """Shape the outgoing body for the endpoint's channel.
+
+    Chat services reject the raw event envelope, so a Discord or Slack endpoint
+    would silently collect 400s if it were sent unchanged. Generic endpoints
+    keep the exact payload they already receive.
+    """
+    channel = getattr(endpoint, "channel", "generic") or "generic"
+    payload = delivery.payload
+    summary = _event_summary(delivery.event_type, payload)
+    is_alert = delivery.event_type in ALERT_EVENTS
+
+    if channel == "discord":
+        body = {
+            "username": "Abhash Memory",
+            "embeds": [
+                {
+                    "title": delivery.event_type,
+                    "description": summary,
+                    # Discord wants a decimal int, not a hex string.
+                    "color": 0xD64550 if is_alert else 0x5C49A3,
+                    "timestamp": payload.get("created_at"),
+                }
+            ],
+        }
+    elif channel == "slack":
+        body = {
+            "text": f"*{delivery.event_type}*\n{summary}",
+            "attachments": [{"color": "danger" if is_alert else "#5C49A3", "text": summary}],
+        }
+    else:
+        body = payload
+
+    return json.dumps(body, separators=(",", ":"), default=str).encode("utf-8")
+
+
 def _attempt_delivery(db: Session, delivery: WebhookDelivery, endpoint: WebhookEndpoint) -> None:
-    body = json.dumps(delivery.payload, separators=(",", ":"), default=str).encode("utf-8")
+    body = format_payload(endpoint, delivery)
+    # The signature always covers the bytes actually sent, so a receiver that
+    # verifies it is checking the same payload it parsed.
     request = urllib.request.Request(
         endpoint.url,
         data=body,

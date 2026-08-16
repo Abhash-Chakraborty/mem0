@@ -16,6 +16,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { EmptyState } from "@/components/self-hosted/empty-state";
 import { TableSkeleton } from "@/components/shared/table-skeleton";
 import { toast } from "@/components/ui/use-toast";
@@ -30,12 +37,24 @@ const EVENTS = [
   "memory.updated",
   "memory.deleted",
   "search.performed",
+  "backup.completed",
+  "backup.failed",
+  "system.degraded",
+];
+
+// Chat services reject the raw signed envelope, so the payload is reshaped per
+// channel. Generic keeps the exact body existing receivers already parse.
+const CHANNELS = [
+  { value: "generic", label: "Generic (signed JSON)" },
+  { value: "discord", label: "Discord" },
+  { value: "slack", label: "Slack" },
 ];
 
 export default function WebhooksPage() {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [events, setEvents] = useState<string[]>(["memory.created"]);
+  const [channel, setChannel] = useState("generic");
   const [busy, setBusy] = useState(false);
 
   const endpointsQuery = useApiQuery<WebhookEndpoint[]>(
@@ -65,7 +84,7 @@ export default function WebhooksPage() {
   const createWebhook = async () => {
     setBusy(true);
     try {
-      const res = await api.post(WEBHOOK_ENDPOINTS.BASE, { name, url, events });
+      const res = await api.post(WEBHOOK_ENDPOINTS.BASE, { name, url, events, channel });
       toast({
         title: "Webhook created",
         description: res.data.secret ? `Secret: ${res.data.secret}` : undefined,
@@ -73,6 +92,7 @@ export default function WebhooksPage() {
       });
       setName("");
       setUrl("");
+      setChannel("generic");
       setEvents(["memory.created"]);
       await refreshAll();
     } catch (error) {
@@ -228,6 +248,21 @@ export default function WebhooksPage() {
               placeholder="https://example.com/webhook"
             />
           </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label>Format</Label>
+            <Select value={channel} onValueChange={setChannel}>
+              <SelectTrigger className="md:max-w-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CHANNELS.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2 md:col-span-2">
             <Label>Events</Label>
             <div className="grid gap-2 md:grid-cols-4">
@@ -287,6 +322,9 @@ export default function WebhooksPage() {
                     <Badge variant="outline">
                       {endpoint.is_active ? "Active" : "Disabled"}
                     </Badge>
+                    {endpoint.channel && endpoint.channel !== "generic" && (
+                      <Badge variant="secondary">{endpoint.channel}</Badge>
+                    )}
                   </div>
                   <p className="text-xs text-onSurface-default-secondary break-all mt-1">
                     {endpoint.url}

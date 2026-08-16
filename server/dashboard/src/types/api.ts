@@ -103,6 +103,8 @@ export interface WebhookEndpoint {
   name: string;
   url: string;
   events: string[];
+  /** Payload shape on the wire. Absent on rows created before channels existed. */
+  channel?: "generic" | "discord" | "slack";
   is_active: boolean;
   secret?: string;
   created_at: string;
