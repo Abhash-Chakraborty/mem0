@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { getErrorMessage } from "@/lib/error-message";
+import { INSTANCE_NAME } from "@/lib/instance";
 import { api } from "@/utils/api";
 import { AUTH_ENDPOINTS } from "@/utils/api-endpoints";
 
@@ -87,8 +88,7 @@ export default function SettingsPage() {
     }
   };
 
-  const instanceName =
-    process.env.NEXT_PUBLIC_INSTANCE_NAME || "Abhash Memory";
+  const instanceName = INSTANCE_NAME;
 
   return (
     <div className="space-y-6">

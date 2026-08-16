@@ -251,3 +251,60 @@ class TestToolDetection:
     def test_no_missing_tools_when_all_present(self, backups):
         with patch.object(backups, "tool_path", return_value="/usr/bin/pg_dump"):
             assert backups.missing_tools() == []
+
+
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+
+
+class TestScheduling:
+    def test_disabled_by_default_so_upgrades_do_not_start_writing_dumps(self, backups):
+        with patch.object(backups, "SCHEDULE_INTERVAL_HOURS", 0):
+            assert backups.is_backup_due(FakeSession()) is False
+            assert backups.run_scheduled_backup(lambda: FakeSession()) is False
+
+    def test_due_when_no_backup_has_ever_run(self, backups):
+        with patch.object(backups, "SCHEDULE_INTERVAL_HOURS", 24):
+            assert backups.is_backup_due(FakeSession([])) is True
+
+    def test_not_due_when_a_recent_backup_exists(self, backups):
+        recent = make_record(status="completed", started_at=datetime.now(timezone.utc))
+        with patch.object(backups, "SCHEDULE_INTERVAL_HOURS", 24):
+            assert backups.is_backup_due(FakeSession([recent])) is False
+
+    def test_due_once_the_interval_has_elapsed(self, backups):
+        old = make_record(
+            status="completed",
+            started_at=datetime.now(timezone.utc) - timedelta(hours=30),
+        )
+        with patch.object(backups, "SCHEDULE_INTERVAL_HOURS", 24):
+            assert backups.is_backup_due(FakeSession([old])) is True
+
+    def test_scheduled_run_is_recorded_as_scheduled_not_manual(self, backups):
+        session = FakeSession([])
+        with patch.object(backups, "SCHEDULE_INTERVAL_HOURS", 24):
+            with patch.object(backups, "run_backup") as run:
+                backups.run_scheduled_backup(lambda: _ctx(session))
+        assert run.call_args.kwargs["kind"] == "scheduled"
+
+    def test_a_failing_backup_does_not_stop_future_attempts(self, backups):
+        """The loop must survive a failure, or one bad night ends all backups."""
+        session = FakeSession([])
+        with patch.object(backups, "SCHEDULE_INTERVAL_HOURS", 24):
+            with patch.object(backups, "run_backup", side_effect=backups.BackupError("nope")):
+                # Returns rather than propagating into the caller's loop.
+                assert backups.run_scheduled_backup(lambda: _ctx(session)) is True
+
+
+class _ctx:
+    """Wrap a FakeSession so it works as a context manager, like SessionLocal()."""
+
+    def __init__(self, session):
+        self._session = session
+
+    def __enter__(self):
+        return self._session
+
+    def __exit__(self, *exc):
+        return False

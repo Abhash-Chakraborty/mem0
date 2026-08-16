@@ -10,6 +10,7 @@ import {
 } from "../../clientLayout";
 import { useDispatch, useSelector } from "react-redux";
 import { cn } from "@/lib/utils";
+import { INSTANCE_NAME } from "@/lib/instance";
 import { RootState } from "@/store/store";
 import { toggleSidebar } from "@/store/reducers/layoutReducer";
 import { useAuth } from "@/hooks/use-auth";
@@ -35,7 +36,7 @@ export default function NavWrapper() {
   );
   const { user, logout } = useAuth();
 
-  const instanceName = process.env.NEXT_PUBLIC_INSTANCE_NAME || "Abhash Memory";
+  const instanceName = INSTANCE_NAME;
 
   const handleToggle = useCallback(() => {
     dispatch(toggleSidebar());

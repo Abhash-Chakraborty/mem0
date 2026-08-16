@@ -45,6 +45,10 @@ logger = logging.getLogger(__name__)
 
 BACKUP_DIR = Path(os.environ.get("MEM0_BACKUP_DIR", "/app/backups"))
 RETENTION_COUNT = int(os.environ.get("MEM0_BACKUP_RETENTION", "7"))
+
+# Hours between automatic backups. 0 disables scheduling, which is the default:
+# an instance should not start writing dumps to disk because it was upgraded.
+SCHEDULE_INTERVAL_HOURS = int(os.environ.get("MEM0_BACKUP_INTERVAL_HOURS", "0"))
 # A dump that has run longer than this is treated as dead. Generous, because a
 # large instance on slow disks is normal; the point is to catch killed processes.
 STALE_RUN_AFTER = timedelta(hours=6)
@@ -334,3 +338,44 @@ def serialize(record: Backup) -> dict[str, Any]:
 
 def list_backups(session: Session, limit: int = 50) -> Iterable[Backup]:
     return session.scalars(select(Backup).order_by(Backup.started_at.desc()).limit(limit))
+
+
+def is_backup_due(session: Session) -> bool:
+    """True when scheduling is on and the last successful backup is old enough.
+
+    Age is measured from the last *completed* backup rather than the last
+    attempt, so a run that keeps failing does not suppress future attempts.
+    """
+    if SCHEDULE_INTERVAL_HOURS <= 0:
+        return False
+    latest = session.scalars(
+        select(Backup)
+        .where(Backup.status == "completed")
+        .order_by(Backup.started_at.desc())
+        .limit(1)
+    ).first()
+    if latest is None:
+        return True
+    return _utcnow() - latest.started_at >= timedelta(hours=SCHEDULE_INTERVAL_HOURS)
+
+
+def run_scheduled_backup(session_factory: Any) -> bool:
+    """Run a backup if one is due. Returns True when one was started.
+
+    Swallows failures deliberately: this is called from a background loop, and
+    the failure is already recorded on the backup row and sent as a
+    backup.failed notification. Raising here would only kill the loop and stop
+    every future backup.
+    """
+    if SCHEDULE_INTERVAL_HOURS <= 0:
+        return False
+    with session_factory() as session:
+        sweep_stale_runs(session)
+        if not is_backup_due(session):
+            return False
+        try:
+            run_backup(session, kind="scheduled")
+            return True
+        except Exception:  # noqa: BLE001
+            logger.exception("Scheduled backup failed")
+            return True

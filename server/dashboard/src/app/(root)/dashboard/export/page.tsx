@@ -20,13 +20,7 @@ import { useApiQuery } from "@/hooks/use-api-query";
 import { api } from "@/utils/api";
 import { CATEGORY_ENDPOINTS, EXPORT_ENDPOINTS } from "@/utils/api-endpoints";
 import { Category, Memory } from "@/types/api";
-
-const INSTANCE_SLUG = (
-  process.env.NEXT_PUBLIC_INSTANCE_NAME || "abhash-memory"
-)
-  .toLowerCase()
-  .replace(/[^a-z0-9]+/g, "-")
-  .replace(/(^-|-$)/g, "");
+import { INSTANCE_SLUG } from "@/lib/instance";
 
 export default function ExportPage() {
   const { data: categories = [] } = useApiQuery<Category[]>(

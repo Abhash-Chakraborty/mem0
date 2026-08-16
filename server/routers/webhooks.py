@@ -12,6 +12,7 @@ from feature_services import (
     utcnow,
 )
 from models import WebhookDelivery, WebhookEndpoint
+from url_guard import UnsafeWebhookURL, validate_webhook_url
 from pydantic import BaseModel, Field, HttpUrl
 from schemas import MessageResponse
 from sqlalchemy import select
@@ -53,6 +54,15 @@ def _validate_channel(channel: str) -> str:
             detail=f"Unsupported channel. Choose one of: {', '.join(WEBHOOK_CHANNELS)}.",
         )
     return channel
+
+
+def _validate_url(url: str) -> str:
+    """Reject targets the server must not be made to fetch (SSRF)."""
+    try:
+        validate_webhook_url(url)
+    except UnsafeWebhookURL as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return url
 
 
 def _validate_events(events: list[str]) -> list[str]:
@@ -116,7 +126,7 @@ def create_webhook(body: WebhookCreate, _auth=Depends(require_admin), db: Sessio
         raise HTTPException(status_code=400, detail="Webhook name is required.")
     endpoint = WebhookEndpoint(
         name=name,
-        url=str(body.url),
+        url=_validate_url(str(body.url)),
         events=_validate_events(body.events),
         channel=_validate_channel(body.channel),
         secret=generate_webhook_secret(),
@@ -154,7 +164,7 @@ def update_webhook(endpoint_id: str, body: WebhookUpdate, _auth=Depends(require_
             raise HTTPException(status_code=400, detail="Webhook name is required.")
         endpoint.name = name
     if body.url is not None:
-        endpoint.url = str(body.url)
+        endpoint.url = _validate_url(str(body.url))
     if body.events is not None:
         endpoint.events = _validate_events(body.events)
     if body.channel is not None:

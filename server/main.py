@@ -32,6 +32,7 @@ from routers import export as export_router
 from routers import graph as graph_router
 from routers import requests as requests_router
 from routers import webhooks as webhooks_router
+import backup_services
 import log_stream
 import settings
 from schemas import MessageResponse
@@ -206,6 +207,34 @@ async def _webhook_retry_loop() -> None:
 @app.on_event("startup")
 async def start_webhook_retry_loop() -> None:
     asyncio.create_task(_webhook_retry_loop())
+
+
+async def _backup_schedule_loop() -> None:
+    """Take a backup when one is due.
+
+    Checked every 15 minutes rather than slept for the full interval, so an
+    instance that is restarted more often than its backup interval still gets
+    backed up instead of never reaching the end of a sleep.
+    """
+    while True:
+        await asyncio.sleep(900)
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, backup_services.run_scheduled_backup, SessionLocal
+            )
+        except Exception:
+            logging.exception("Scheduled backup check failed")
+
+
+@app.on_event("startup")
+async def start_backup_schedule_loop() -> None:
+    if backup_services.SCHEDULE_INTERVAL_HOURS > 0:
+        logging.info(
+            "Automatic backups enabled: every %d hour(s), keeping %d.",
+            backup_services.SCHEDULE_INTERVAL_HOURS,
+            backup_services.RETENTION_COUNT,
+        )
+        asyncio.create_task(_backup_schedule_loop())
 
 
 @app.on_event("startup")

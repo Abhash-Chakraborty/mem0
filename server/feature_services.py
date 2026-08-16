@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from models import Category, MemoryCategory, RequestLog, WebhookDelivery, WebhookEndpoint
+from url_guard import UnsafeWebhookURL, validate_webhook_url
 from settings import (
     CATEGORY_CONFIDENCE_FLOOR,
     CATEGORY_MODEL,
@@ -23,6 +24,8 @@ from settings import (
 )
 
 RESERVED_PAYLOAD_KEYS = {"data", "user_id", "agent_id", "run_id", "hash", "created_at", "updated_at", "text_lemmatized"}
+logger = logging.getLogger(__name__)
+
 WEBHOOK_EVENTS = {
     "memory.created",
     "memory.updated",
@@ -402,6 +405,22 @@ def format_payload(endpoint: WebhookEndpoint, delivery: WebhookDelivery) -> byte
 
 
 def _attempt_delivery(db: Session, delivery: WebhookDelivery, endpoint: WebhookEndpoint) -> None:
+    # Re-checked here and not only at save time: DNS can be repointed after an
+    # endpoint is created, so a target that was public when it was saved may
+    # resolve somewhere internal by the time it is delivered to.
+    try:
+        validate_webhook_url(endpoint.url)
+    except UnsafeWebhookURL as exc:
+        delivery.attempts += 1
+        delivery.last_attempt_at = utcnow()
+        delivery.status = "failed"
+        delivery.response_status = None
+        delivery.response_body = f"Blocked: {exc}"
+        delivery.next_attempt_at = None  # retrying cannot help
+        db.commit()
+        logger.warning("Blocked webhook delivery to %s: %s", endpoint.url, exc)
+        return
+
     body = format_payload(endpoint, delivery)
     # The signature always covers the bytes actually sent, so a receiver that
     # verifies it is checking the same payload it parsed.
