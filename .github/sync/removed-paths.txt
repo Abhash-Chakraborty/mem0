@@ -30,7 +30,12 @@
 .github/workflows/ts-sdk-ci.yml
 .github/workflows/vercel-ai-cd.yml
 
+# NOTE: server/.env.example is deliberately NOT listed here. This fork owns its
+# own template (different defaults, extra variables), and docker-compose plus
+# server/AGENTS.md both depend on it existing. Pruning it left fresh clones with
+# no way to start. An upstream edit to that file will surface as a conflict,
+# which is the point: it tells you upstream added configuration worth reviewing.
+
 # --- Self-hosted dashboard: cloud-upgrade UI removed from this fork ---
-server/.env.example
 server/dashboard/src/components/self-hosted/locked-page.tsx
 server/dashboard/src/components/self-hosted/upgrade-banner.tsx

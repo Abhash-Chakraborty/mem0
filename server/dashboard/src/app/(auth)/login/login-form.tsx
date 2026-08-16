@@ -24,6 +24,11 @@ import { isValidEmail } from "@/lib/validators";
 const RESET_COMMAND =
   "make reset-admin-password EMAIL=<your-email> PASSWORD=<new-password>";
 
+// The stack this instance actually runs on. The panel previously showed AWS,
+// NVIDIA and Vercel logos inherited from upstream's marketing page, which
+// implied endorsements that do not apply to a personal deployment.
+const STACK = ["Docker", "FastAPI", "Postgres + pgvector", "Next.js"];
+
 export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -174,60 +179,51 @@ export default function LoginForm() {
 
       <div className="relative hidden h-screen flex-1 items-center justify-center overflow-hidden bg-gradient-to-b from-[#31275A] to-[#5C49A3] px-10 lg:flex">
         <div className="pointer-events-none absolute inset-0 bg-[url('/images/dither.svg')] bg-bottom bg-no-repeat bg-contain" />
-        <div className="relative z-10 flex w-full max-w-[564px] flex-col items-center gap-20 text-center text-white">
-          <div className="w-full space-y-5">
+        <div className="relative z-10 flex w-full max-w-[564px] flex-col items-center gap-12 text-center text-white">
+          <div className="flex w-full flex-col items-center gap-6">
             <p className="typo-h3 text-white">
               &quot;Private memory for Abhash&apos;s agents, running on
               Abhash&apos;s own infrastructure.&quot;
             </p>
-            <div className="flex flex-col items-center gap-[7px]">
-              <div className="flex flex-col items-center gap-1">
+            {/* Attribution reads top-down: mark, then who it belongs to. The
+                mark leads because this instance speaks for itself - the stock
+                headshot that used to sit here belonged to an upstream
+                testimonial, not to this deployment. */}
+            <div className="flex items-center justify-center gap-3">
+              <Image
+                src="/images/logos/logo-light.png"
+                alt=""
+                aria-hidden
+                width={32}
+                height={32}
+                className="size-8 shrink-0 rounded-full bg-white/10 p-1.5"
+              />
+              <div className="text-left">
                 <p className="typo-body-sm text-white">Abhash Memory</p>
-                <p className="typo-body-xs text-white">
+                <p className="typo-body-xs text-white/70">
                   Personal self-hosted fork
                 </p>
               </div>
-              <Image
-                src="/images/micheal.png"
-                alt="Michael Tong"
-                width={32}
-                height={32}
-                className="size-8 rounded-full object-cover"
-              />
             </div>
           </div>
-          <div className="flex w-full flex-col items-center gap-3">
-            <p className="typo-body text-white">
-              Personal memory layer for private agents
+
+          <div className="flex w-full flex-col items-center gap-4">
+            <p className="typo-body-sm uppercase tracking-[0.18em] text-white/60">
+              Running on
             </p>
-            <div className="flex items-center justify-center gap-8 text-white">
-              <div className="h-6 shrink-0">
-                <Image
-                  src="/images/logos/aws.svg"
-                  alt="AWS"
-                  width={41}
-                  height={24}
-                  className="size-full object-contain"
-                />
-              </div>
-              <div className="h-5 shrink-0">
-                <Image
-                  src="/images/logos/nvidia.svg"
-                  alt="NVIDIA"
-                  width={109}
-                  height={21}
-                  className="size-full object-contain"
-                />
-              </div>
-              <div className="h-[21px] shrink-0">
-                <Image
-                  src="/images/vercel.png"
-                  alt="Vercel"
-                  width={66}
-                  height={21}
-                  className="size-full object-contain"
-                />
-              </div>
+            {/* Each chip is its own flex item with intrinsic width. The old row
+                sized logos with `size-full` inside height-only wrappers, so the
+                images had no width to resolve against and rendered at uneven
+                widths with ragged baselines. */}
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {STACK.map((item) => (
+                <span
+                  key={item}
+                  className="rounded-full border border-white/20 bg-white/10 px-3 py-1 typo-body-xs text-white"
+                >
+                  {item}
+                </span>
+              ))}
             </div>
           </div>
         </div>

@@ -30,6 +30,7 @@ from routers import export as export_router
 from routers import graph as graph_router
 from routers import requests as requests_router
 from routers import webhooks as webhooks_router
+import settings
 from schemas import MessageResponse
 from server_state import (
     get_current_config,
@@ -125,8 +126,8 @@ POSTGRES_COLLECTION_NAME = os.environ.get("POSTGRES_COLLECTION_NAME", "memories"
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 HISTORY_DB_PATH = os.environ.get("HISTORY_DB_PATH", "/app/history/history.db")
-DEFAULT_LLM_MODEL = os.environ.get("MEM0_DEFAULT_LLM_MODEL", "gpt-5.4-nano")
-DEFAULT_EMBEDDER_MODEL = os.environ.get("MEM0_DEFAULT_EMBEDDER_MODEL", "text-embedding-3-small")
+DEFAULT_LLM_MODEL = settings.DEFAULT_LLM_MODEL
+DEFAULT_EMBEDDER_MODEL = settings.DEFAULT_EMBEDDER_MODEL
 
 DEFAULT_CONFIG = {
     "version": "v1.1",

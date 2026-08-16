@@ -28,13 +28,7 @@ export default function SetupLayout({
     >
       <body className="font-fustat" suppressHydrationWarning>
         <AuthProvider>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="light"
-            disableTransitionOnChange
-          >
-            {children}
-          </ThemeProvider>
+          <ThemeProvider>{children}</ThemeProvider>
         </AuthProvider>
       </body>
     </html>

@@ -15,11 +15,12 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from models import Category, MemoryCategory, RequestLog, WebhookDelivery, WebhookEndpoint
-
-CATEGORY_MODEL = os.environ.get("MEM0_CATEGORY_LLM_MODEL") or os.environ.get("MEM0_DEFAULT_LLM_MODEL", "gpt-5.4-mini")
-CATEGORY_CONFIDENCE_FLOOR = float(os.environ.get("MEM0_CATEGORY_CONFIDENCE_FLOOR", "0.45"))
-MAX_WEBHOOK_ATTEMPTS = int(os.environ.get("MEM0_WEBHOOK_MAX_ATTEMPTS", "5"))
-WEBHOOK_TIMEOUT_SECONDS = int(os.environ.get("MEM0_WEBHOOK_TIMEOUT_SECONDS", "8"))
+from settings import (
+    CATEGORY_CONFIDENCE_FLOOR,
+    CATEGORY_MODEL,
+    MAX_WEBHOOK_ATTEMPTS,
+    WEBHOOK_TIMEOUT_SECONDS,
+)
 
 RESERVED_PAYLOAD_KEYS = {"data", "user_id", "agent_id", "run_id", "hash", "created_at", "updated_at", "text_lemmatized"}
 WEBHOOK_EVENTS = {"memory.created", "memory.updated", "memory.deleted", "search.performed", "webhook.test"}

@@ -38,12 +38,7 @@ export function DashboardClientLayout({
       >
         <Provider store={store}>
           <AuthProvider>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="light"
-              enableSystem
-              disableTransitionOnChange
-            >
+            <ThemeProvider>
               <ClientLayout>{children}</ClientLayout>
               <Toaster />
             </ThemeProvider>
