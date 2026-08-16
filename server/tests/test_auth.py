@@ -88,14 +88,19 @@ class TestVerifyAuth:
         resolve.assert_called_once()
 
     def test_admin_api_key_unset_does_not_match_empty_header(self, auth_module):
-        """With no ADMIN_API_KEY configured, an empty key must not authenticate."""
-        with patch.object(auth_module, "ADMIN_API_KEY", ""):
-            with patch.object(auth_module, "_resolve_user_from_api_key") as resolve:
-                resolve.side_effect = auth_module.HTTPException(
-                    status_code=401, detail="Invalid API key."
-                )
-                client = build_app(auth_module, "verify_auth")
-                resp = client.get("/protected", headers={"X-API-Key": ""})
+        """With no ADMIN_API_KEY configured, an empty key must not authenticate.
+
+        AUTH_DISABLED is pinned false here so the assertion is about the key
+        check itself and cannot be satisfied by an ambient env var instead.
+        """
+        with patch.object(auth_module, "AUTH_DISABLED", False):
+            with patch.object(auth_module, "ADMIN_API_KEY", ""):
+                with patch.object(auth_module, "_resolve_user_from_api_key") as resolve:
+                    resolve.side_effect = auth_module.HTTPException(
+                        status_code=401, detail="Invalid API key."
+                    )
+                    client = build_app(auth_module, "verify_auth")
+                    resp = client.get("/protected", headers={"X-API-Key": ""})
         assert resp.status_code == 401
 
     def test_bearer_token_takes_precedence_over_api_key(self, auth_module):

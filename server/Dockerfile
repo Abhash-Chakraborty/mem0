@@ -2,6 +2,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# pg_dump / pg_restore / psql back the /backups endpoints. Without them the API
+# still runs, but backups report themselves unavailable - which is the one
+# failure mode this instance cannot afford to discover during an incident.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 
 # mem0's v3 entity extraction (which feeds the /graph endpoint's entity store)

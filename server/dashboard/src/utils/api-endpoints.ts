@@ -70,3 +70,17 @@ export const ANALYTICS_ENDPOINTS = {
 export const EXPORT_ENDPOINTS = {
   BASE: "/export",
 } as const;
+
+export const BACKUP_ENDPOINTS = {
+  BASE: "/backups",
+  BY_ID: (backupId: string) => `/backups/${backupId}`,
+  DOWNLOAD: (backupId: string, part: "vector" | "app") =>
+    `/backups/${backupId}/download?part=${part}`,
+  RESTORE: (backupId: string) => `/backups/${backupId}/restore`,
+} as const;
+
+export const SYSTEM_ENDPOINTS = {
+  HEALTH: "/system/health",
+  LOGS: "/system/logs",
+  LOG_STREAM: "/system/logs/stream",
+} as const;

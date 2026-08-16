@@ -24,12 +24,15 @@ from rate_limit import limiter
 from routers import api_keys as api_keys_router
 from routers import auth as auth_router
 from routers import analytics as analytics_router
+from routers import backups as backups_router
+from routers import system as system_router
 from routers import categories as categories_router
 from routers import entities as entities_router
 from routers import export as export_router
 from routers import graph as graph_router
 from routers import requests as requests_router
 from routers import webhooks as webhooks_router
+import log_stream
 import settings
 from schemas import MessageResponse
 from server_state import (
@@ -187,6 +190,8 @@ app.include_router(categories_router.router)
 app.include_router(webhooks_router.router)
 app.include_router(analytics_router.router)
 app.include_router(export_router.router)
+app.include_router(backups_router.router)
+app.include_router(system_router.router)
 
 
 async def _webhook_retry_loop() -> None:
@@ -201,6 +206,17 @@ async def _webhook_retry_loop() -> None:
 @app.on_event("startup")
 async def start_webhook_retry_loop() -> None:
     asyncio.create_task(_webhook_retry_loop())
+
+
+@app.on_event("startup")
+async def start_log_stream() -> None:
+    """Capture logs for the dashboard's log view.
+
+    The handler is installed here rather than at import time so it binds to the
+    loop that will actually serve the SSE subscribers.
+    """
+    log_stream.bind_loop(asyncio.get_running_loop())
+    log_stream.install()
 
 
 class Message(BaseModel):

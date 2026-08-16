@@ -147,3 +147,59 @@ export interface AnalyticsSummary {
   categorized_memories: number;
   category_distribution: Array<{ name: string; color: string; count: number }>;
 }
+
+export type HealthStatus =
+  | "ok"
+  | "degraded"
+  | "critical"
+  | "unavailable"
+  | "unknown";
+
+export interface Backup {
+  id: string;
+  filename: string;
+  kind: string;
+  status: "running" | "completed" | "failed";
+  size_bytes: number;
+  checksum: string;
+  destination: string;
+  error: string;
+  started_at: string | null;
+  completed_at: string | null;
+  verified_at: string | null;
+}
+
+export interface BackupListResponse {
+  backups: Backup[];
+  retention_count: number;
+  missing_tools: string[];
+  directory: string;
+}
+
+/** Each health section reports its own status; extra keys vary by section. */
+export interface HealthSection {
+  status: HealthStatus;
+  error?: string;
+  [key: string]: unknown;
+}
+
+export interface SystemHealth {
+  status: HealthStatus;
+  uptime_seconds: number;
+  generated_at: string;
+  sections: Record<string, HealthSection>;
+}
+
+export interface LogEntry {
+  timestamp: string;
+  level: "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+  logger: string;
+  message: string;
+  request_id: string | null;
+  error: string | null;
+}
+
+export interface LogListResponse {
+  logs: LogEntry[];
+  buffer_size: number;
+}

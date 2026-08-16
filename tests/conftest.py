@@ -17,6 +17,11 @@ import pytest
 
 # Values the server module reads at import time. Set before any test module is
 # collected so importing server.main can never fail on a missing secret.
+#
+# These are assigned unconditionally rather than with setdefault. Deferring to
+# the ambient environment made the suite's result depend on the shell it ran in:
+# a developer or CI job exporting AUTH_DISABLED=false turned all 68 upstream
+# tests into 401 failures that looked like a code regression.
 _SERVER_TEST_ENV = {
     "JWT_SECRET": "test-secret-at-least-sixteen-chars",
     "AUTH_DISABLED": "true",
@@ -30,7 +35,7 @@ _SERVER_TEST_ENV = {
 }
 
 for _key, _value in _SERVER_TEST_ENV.items():
-    os.environ.setdefault(_key, _value)
+    os.environ[_key] = _value
 
 
 @pytest.fixture

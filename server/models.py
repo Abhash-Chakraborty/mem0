@@ -147,3 +147,29 @@ class WebhookDelivery(Base):
         default=_utcnow,
         onupdate=_utcnow,
     )
+
+
+class Backup(Base):
+    """One snapshot attempt of the Postgres databases.
+
+    A row is created when the run starts and updated in place as it progresses,
+    so a crashed or killed run leaves a visible "running" record rather than
+    disappearing. `verified_at` is set only after the dump has been read back
+    and its structure checked - an unverified backup is not a backup.
+    """
+
+    __tablename__ = "backups"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    filename: Mapped[str] = mapped_column(String(512))
+    # "manual" or "scheduled" - kept so retention can treat them differently.
+    kind: Mapped[str] = mapped_column(String(32), default="manual", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="running", index=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    checksum: Mapped[str] = mapped_column(String(64), default="")
+    # "local" or "s3://bucket/key" once uploaded.
+    destination: Mapped[str] = mapped_column(String(512), default="local")
+    error: Mapped[str] = mapped_column(Text, default="")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
