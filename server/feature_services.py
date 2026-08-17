@@ -81,10 +81,13 @@ def get_memory(memory_instance: Any, memory_id: str) -> dict[str, Any] | None:
     return serialize_memory_row(row) if row else None
 
 
-def category_counts(db: Session) -> dict[str, int]:
-    rows = db.execute(
-        select(MemoryCategory.category_id, func.count(MemoryCategory.id)).group_by(MemoryCategory.category_id)
-    ).all()
+def category_counts(db: Session, project_id: Any = None) -> dict[str, int]:
+    query = select(MemoryCategory.category_id, func.count(MemoryCategory.id))
+    if project_id is not None:
+        query = query.join(Category, Category.id == MemoryCategory.category_id).where(
+            Category.project_id == project_id
+        )
+    rows = db.execute(query.group_by(MemoryCategory.category_id)).all()
     return {str(category_id): count for category_id, count in rows}
 
 
@@ -142,8 +145,11 @@ def _category_prompt(memory: dict[str, Any], categories: list[Category]) -> list
     ]
 
 
-def classify_memory(db: Session, memory: dict[str, Any]) -> list[dict[str, Any]]:
-    categories = db.scalars(select(Category).where(Category.is_active.is_(True)).order_by(Category.name)).all()
+def classify_memory(db: Session, memory: dict[str, Any], project_id: Any = None) -> list[dict[str, Any]]:
+    query = select(Category).where(Category.is_active.is_(True))
+    if project_id is not None:
+        query = query.where(Category.project_id == project_id)
+    categories = db.scalars(query.order_by(Category.name)).all()
     if not categories or not memory.get("id") or not memory.get("memory"):
         return []
 
@@ -201,7 +207,9 @@ def classify_memory(db: Session, memory: dict[str, Any]) -> list[dict[str, Any]]
     return assignments
 
 
-def apply_auto_add_categories(db: Session, memory: dict[str, Any]) -> list[dict[str, Any]]:
+def apply_auto_add_categories(
+    db: Session, memory: dict[str, Any], project_id: Any = None
+) -> list[dict[str, Any]]:
     """Attach every active, auto-add category to a memory.
 
     Unlike the AI classifier this makes no judgment — flagged categories are
@@ -211,9 +219,10 @@ def apply_auto_add_categories(db: Session, memory: dict[str, Any]) -> list[dict[
     memory_id = memory.get("id")
     if not memory_id:
         return []
-    categories = db.scalars(
-        select(Category).where(Category.is_active.is_(True), Category.auto_add.is_(True))
-    ).all()
+    auto_query = select(Category).where(Category.is_active.is_(True), Category.auto_add.is_(True))
+    if project_id is not None:
+        auto_query = auto_query.where(Category.project_id == project_id)
+    categories = db.scalars(auto_query).all()
     if not categories:
         return []
 
@@ -258,7 +267,9 @@ def _generate_categories_prompt(samples: list[str], existing: list[str], max_new
     ]
 
 
-def generate_categories(db: Session, max_new: int = 8, sample_size: int = 200) -> list[Category]:
+def generate_categories(
+    db: Session, max_new: int = 8, sample_size: int = 200, project_id: Any = None
+) -> list[Category]:
     """Use the LLM to propose categories from existing memories, then create the new ones.
 
     Skips any proposed name that already exists (case-insensitive). Returns the
@@ -271,7 +282,10 @@ def generate_categories(db: Session, max_new: int = 8, sample_size: int = 200) -
     if not samples:
         return []
 
-    existing = db.scalars(select(Category.name)).all()
+    existing_query = select(Category.name)
+    if project_id is not None:
+        existing_query = existing_query.where(Category.project_id == project_id)
+    existing = db.scalars(existing_query).all()
     existing_lower = {name.lower() for name in existing}
 
     client_kwargs = {"api_key": os.environ.get("OPENAI_API_KEY")}
@@ -299,6 +313,7 @@ def generate_categories(db: Session, max_new: int = 8, sample_size: int = 200) -
             continue
         seen.add(name.lower())
         category = Category(
+            project_id=project_id,
             name=name,
             description=str(item.get("description") or "").strip()[:1000],
             color=CATEGORY_PALETTE[index % len(CATEGORY_PALETTE)],

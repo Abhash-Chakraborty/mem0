@@ -1,7 +1,6 @@
 import uuid
 from typing import Any
 
-from auth import require_admin
 from db import get_db
 from errors import upstream_error
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,8 +20,24 @@ from server_state import get_memory_instance
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
+from tenancy import Scope, require_role, require_scope, scope_results, visible_to
 
 router = APIRouter(prefix="/categories", tags=["categories"])
+
+
+def _scoped(db: Session, category_id: str, scope: Scope) -> Category:
+    """Fetch a category and confirm it belongs to the caller's project.
+
+    404 on a category from another project, not 403: the id should not be
+    usable to discover what other projects have named things.
+    """
+    try:
+        category = db.get(Category, uuid.UUID(category_id))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=404, detail="Category not found.")
+    if category is None or category.project_id != scope.project_id:
+        raise HTTPException(status_code=404, detail="Category not found.")
+    return category
 
 
 class CategoryCreate(BaseModel):
@@ -60,21 +75,30 @@ def _category_response(category: Category, count: int = 0) -> dict[str, Any]:
 
 
 @router.get("")
-def list_categories(_auth=Depends(require_admin), db: Session = Depends(get_db)):
-    counts = category_counts(db)
-    categories = db.scalars(select(Category).order_by(Category.name)).all()
+def list_categories(scope: Scope = Depends(require_scope), db: Session = Depends(get_db)):
+    counts = category_counts(db, scope.project_id)
+    categories = db.scalars(
+        select(Category).where(Category.project_id == scope.project_id).order_by(Category.name)
+    ).all()
     return [_category_response(category, counts.get(str(category.id), 0)) for category in categories]
 
 
 @router.post("")
-def create_category(body: CategoryCreate, _auth=Depends(require_admin), db: Session = Depends(get_db)):
+def create_category(
+    body: CategoryCreate,
+    scope: Scope = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Category name is required.")
-    existing = db.scalar(select(Category).where(Category.name == name))
+    existing = db.scalar(
+        select(Category).where(Category.project_id == scope.project_id, Category.name == name)
+    )
     if existing:
-        raise HTTPException(status_code=409, detail="Category already exists.")
+        raise HTTPException(status_code=409, detail="Category already exists in this project.")
     category = Category(
+        project_id=scope.project_id,
         name=name,
         description=body.description.strip(),
         color=body.color.strip() or "#7c3aed",
@@ -90,12 +114,10 @@ def create_category(body: CategoryCreate, _auth=Depends(require_admin), db: Sess
 def update_category(
     category_id: str,
     body: CategoryUpdate,
-    _auth=Depends(require_admin),
+    scope: Scope = Depends(require_role("admin")),
     db: Session = Depends(get_db),
 ):
-    category = db.get(Category, uuid.UUID(category_id))
-    if not category:
-        raise HTTPException(status_code=404, detail="Category not found.")
+    category = _scoped(db, category_id, scope)
     if body.name is not None:
         name = body.name.strip()
         if not name:
@@ -111,14 +133,16 @@ def update_category(
         category.auto_add = body.auto_add
     db.commit()
     db.refresh(category)
-    return _category_response(category, category_counts(db).get(str(category.id), 0))
+    return _category_response(category, category_counts(db, scope.project_id).get(str(category.id), 0))
 
 
 @router.delete("/{category_id}", response_model=MessageResponse)
-def delete_category(category_id: str, _auth=Depends(require_admin), db: Session = Depends(get_db)):
-    category = db.get(Category, uuid.UUID(category_id))
-    if not category:
-        raise HTTPException(status_code=404, detail="Category not found.")
+def delete_category(
+    category_id: str,
+    scope: Scope = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    category = _scoped(db, category_id, scope)
     db.delete(category)
     db.commit()
     return MessageResponse(message="Category deleted")
@@ -127,10 +151,11 @@ def delete_category(category_id: str, _auth=Depends(require_admin), db: Session 
 @router.get("/memories")
 def list_category_memories(
     category_id: str | None = Query(default=None),
-    _auth=Depends(require_admin),
+    scope: Scope = Depends(require_scope),
     db: Session = Depends(get_db),
 ):
-    memories = attach_categories(db, list_memories(get_memory_instance()))
+    visible = scope_results(list_memories(get_memory_instance()), scope)
+    memories = attach_categories(db, visible)
     if category_id:
         memories = [
             memory
@@ -141,12 +166,16 @@ def list_category_memories(
 
 
 @router.post("/memories/{memory_id}/classify")
-def classify_memory_endpoint(memory_id: str, _auth=Depends(require_admin), db: Session = Depends(get_db)):
+def classify_memory_endpoint(
+    memory_id: str,
+    scope: Scope = Depends(require_role("member")),
+    db: Session = Depends(get_db),
+):
     memory = get_memory(get_memory_instance(), memory_id)
-    if not memory:
+    if not memory or not visible_to(memory, scope):
         raise HTTPException(status_code=404, detail="Memory not found.")
     try:
-        classify_memory(db, memory)
+        classify_memory(db, memory, scope.project_id)
     except Exception:
         raise upstream_error()
     return {"memory_id": memory_id, "assignments": attach_categories(db, [memory])[0]["categories"]}
@@ -156,12 +185,13 @@ def classify_memory_endpoint(memory_id: str, _auth=Depends(require_admin), db: S
 def assign_category(
     memory_id: str,
     body: AssignCategoryRequest,
-    _auth=Depends(require_admin),
+    scope: Scope = Depends(require_role("member")),
     db: Session = Depends(get_db),
 ):
-    category = db.get(Category, uuid.UUID(body.category_id))
-    if not category:
-        raise HTTPException(status_code=404, detail="Category not found.")
+    category = _scoped(db, body.category_id, scope)
+    memory = get_memory(get_memory_instance(), memory_id)
+    if not memory or not visible_to(memory, scope):
+        raise HTTPException(status_code=404, detail="Memory not found.")
     stmt = (
         insert(MemoryCategory)
         .values(
@@ -185,9 +215,10 @@ def assign_category(
 def unassign_category(
     memory_id: str,
     category_id: str,
-    _auth=Depends(require_admin),
+    scope: Scope = Depends(require_role("member")),
     db: Session = Depends(get_db),
 ):
+    _scoped(db, category_id, scope)
     db.execute(
         delete(MemoryCategory).where(
             MemoryCategory.memory_id == memory_id,
@@ -199,10 +230,13 @@ def unassign_category(
 
 
 @router.post("/auto-generate")
-def auto_generate_categories(_auth=Depends(require_admin), db: Session = Depends(get_db)):
-    """Have the LLM propose categories from existing memories and create the new ones."""
+def auto_generate_categories(
+    scope: Scope = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Have the LLM propose categories from this project's memories and create the new ones."""
     try:
-        created = generate_categories(db)
+        created = generate_categories(db, project_id=scope.project_id)
     except Exception:
         raise upstream_error()
     return {
@@ -212,13 +246,16 @@ def auto_generate_categories(_auth=Depends(require_admin), db: Session = Depends
 
 
 @router.post("/reclassify")
-def reclassify_all(_auth=Depends(require_admin), db: Session = Depends(get_db)):
-    memories = list_memories(get_memory_instance())
+def reclassify_all(
+    scope: Scope = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    memories = scope_results(list_memories(get_memory_instance()), scope)
     processed = 0
     for memory in memories:
         try:
-            classify_memory(db, memory)
-            apply_auto_add_categories(db, memory)
+            classify_memory(db, memory, scope.project_id)
+            apply_auto_add_categories(db, memory, scope.project_id)
             processed += 1
         except Exception:
             continue
