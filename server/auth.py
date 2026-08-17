@@ -16,6 +16,10 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 30
+# How long an already-rotated refresh token still answers. Covers concurrent
+# honest replays (multiple tabs, a reload's parallel requests) without leaving a
+# spent token usable for any meaningful length of time. See consume_refresh_jti.
+REFRESH_REPLAY_GRACE = timedelta(seconds=10)
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
 AUTH_DISABLED = os.environ.get("AUTH_DISABLED", "").lower() in {"1", "true", "yes", "on"}
 
@@ -74,6 +78,13 @@ def consume_refresh_jti(jti: str, db: Session) -> None:
 
     The conditional UPDATE closes the read-check-write race: concurrent replays of the same
     token race on a single row, so at most one update affects a row and the rest see rowcount 0.
+
+    A losing racer is then re-checked against a short grace window. Rotation is per-token, but a
+    browser holds one cookie across every tab and every request in a page load, so honest clients
+    do present the same token twice: two tabs restored together, or a reload where the session
+    bootstrap and a retried request both reach for it. Refusing those logs the user out for doing
+    nothing wrong. The window is small enough that a stolen token is still caught the moment its
+    real owner's next rotation falls outside it.
     """
     try:
         jti_uuid = uuid.UUID(jti)
@@ -89,9 +100,25 @@ def consume_refresh_jti(jti: str, db: Session) -> None:
         )
         .values(used_at=now)
     )
-    if result.rowcount == 0:
+    if result.rowcount == 1:
+        db.commit()
+        return
+
+    # Lost the race, or the token was already spent. Either way `used_at` is set by
+    # whoever won; the row is only forgiven if that happened moments ago.
+    row = db.scalar(
+        select(RefreshTokenJti).where(
+            RefreshTokenJti.jti == jti_uuid,
+            RefreshTokenJti.used_at.is_not(None),
+            RefreshTokenJti.expires_at > now,
+            RefreshTokenJti.used_at > now - REFRESH_REPLAY_GRACE,
+        )
+    )
+    if row is None:
         raise HTTPException(status_code=401, detail="Refresh token is no longer valid.")
-    db.commit()
+
+    # `used_at` is deliberately left at the winner's timestamp. Refreshing it here would
+    # let a token be replayed indefinitely, one call inside the window at a time.
 
 
 def decode_token(token: str) -> dict:

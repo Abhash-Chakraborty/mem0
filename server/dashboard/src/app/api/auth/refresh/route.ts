@@ -34,16 +34,29 @@ export async function POST() {
     return NextResponse.json({ error: "No refresh token" }, { status: 401 });
   }
 
-  const res = await fetch(`${getServerApiUrl()}${AUTH_ENDPOINTS.REFRESH}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${getServerApiUrl()}${AUTH_ENDPOINTS.REFRESH}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  } catch {
+    // The API is unreachable, which says nothing about whether the token is
+    // good. Keeping the cookie lets the session come back on the next attempt
+    // instead of turning a restart or a network blip into a forced sign-out.
+    return NextResponse.json({ error: "API unreachable" }, { status: 503 });
+  }
 
-  if (!res.ok) {
-    // Refresh token is invalid — clear cookie
+  if (res.status === 401) {
+    // The only answer that means the token itself is spent, expired or revoked.
     cookieStore.delete(COOKIE_NAME);
     return NextResponse.json({ error: "Refresh failed" }, { status: 401 });
+  }
+
+  if (!res.ok) {
+    // 5xx, a rate-limit 429, a proxy error: transient, so the cookie stays.
+    return NextResponse.json({ error: "Refresh failed" }, { status: 503 });
   }
 
   const data = await res.json();

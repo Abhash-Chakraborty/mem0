@@ -22,6 +22,7 @@ import {
 } from "react";
 import { api, setActiveScope } from "@/utils/api";
 import { TENANCY_ENDPOINTS } from "@/utils/api-endpoints";
+import { useAuth } from "@/hooks/use-auth";
 
 export interface Organization {
   id: string;
@@ -118,6 +119,7 @@ function writeStored(key: string, value: string | null) {
 }
 
 export function ScopeProvider({ children }: { children: React.ReactNode }) {
+  const { user, isLoading: isAuthLoading } = useAuth();
   const [scope, setScope] = useState<ResolvedScope | null>(null);
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -161,13 +163,31 @@ export function ScopeProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // The stored selection is adopted immediately so that the first request to
+  // leave this provider already carries the right headers. It costs nothing:
+  // reading localStorage is not a request.
   useEffect(() => {
     const storedOrg = readStored(ORG_STORAGE_KEY);
     const storedProject = readStored(PROJECT_STORAGE_KEY);
     selection.current = { org: storedOrg, project: storedProject };
     setActiveScope(storedOrg, storedProject);
+  }, []);
+
+  // Fetching waits for the session. /scope needs a bearer token, and this
+  // provider mounts in the same commit as the auth bootstrap that obtains one,
+  // so loading unconditionally would 401 on every dashboard load — and the
+  // retry behind that 401 would race the bootstrap for a single-use refresh
+  // token. Whichever lost took the whole session down with it, which is why a
+  // correct password could still land the user back on /login.
+  const userId = user?.id ?? null;
+  useEffect(() => {
+    if (isAuthLoading) return;
+    if (!userId) {
+      setIsLoading(false);
+      return;
+    }
     void load();
-  }, [load]);
+  }, [isAuthLoading, userId, load]);
 
   const switchOrg = useCallback(
     (orgId: string) => {

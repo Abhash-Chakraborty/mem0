@@ -34,6 +34,11 @@ export const Roboto = localFont({
   ],
   variable: "--font-roboto-mono",
   display: "swap",
+  // Reached only through the opt-in `font-roboto` utility, never as a body
+  // font, so every page was preloading eight monospace files it would not
+  // paint - which is what the browser's "preloaded but not used" warnings
+  // were counting. `display: swap` still fades them in wherever they are used.
+  preload: false,
 });
 
 export const Fustat = localFont({
@@ -83,4 +88,6 @@ export const DMMono = localFont({
   ],
   variable: "--font-dm-mono",
   display: "swap",
+  // Six faces behind the opt-in `font-dm-mono` utility. See Roboto above.
+  preload: false,
 });
