@@ -19,6 +19,16 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 COPY . .
 
+# Build identity, surfaced at GET /system/version. Baked in rather than read
+# from the working tree at runtime so a container always reports the commit it
+# was actually built from.
+ARG APP_VERSION=dev
+ARG GIT_SHA=unknown
+ARG BUILT_AT=unknown
+ENV APP_VERSION=${APP_VERSION} \
+    GIT_SHA=${GIT_SHA} \
+    BUILT_AT=${BUILT_AT}
+
 EXPOSE 8000
 
 ENV PYTHONUNBUFFERED=1

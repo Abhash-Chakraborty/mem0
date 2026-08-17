@@ -22,4 +22,12 @@ RUN pip install -e .[graph]
 WORKDIR /app
 COPY server .
 
+# Build identity, surfaced at GET /system/version.
+ARG APP_VERSION=dev
+ARG GIT_SHA=unknown
+ARG BUILT_AT=unknown
+ENV APP_VERSION=${APP_VERSION} \
+    GIT_SHA=${GIT_SHA} \
+    BUILT_AT=${BUILT_AT}
+
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

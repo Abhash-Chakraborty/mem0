@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import platform
 import shutil
 import time
 from datetime import datetime, timedelta, timezone
@@ -25,7 +26,7 @@ from sqlalchemy.orm import Session
 import backup_services
 import log_stream
 import settings
-from auth import require_admin
+from auth import require_admin, verify_auth
 from db import engine, get_db
 from models import Backup, RequestLog, WebhookDelivery
 from server_state import get_memory_instance
@@ -221,6 +222,41 @@ def system_health(_admin=Depends(require_admin), db: Session = Depends(get_db)):
         "uptime_seconds": int(time.time() - PROCESS_STARTED_AT),
         "generated_at": _utcnow().isoformat(),
         "sections": sections,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Version
+# ---------------------------------------------------------------------------
+
+
+def _core_version() -> str:
+    """Version of the vendored mem0 core actually loaded into this process."""
+    try:
+        from importlib.metadata import version
+
+        return version("mem0ai")
+    except Exception:  # noqa: BLE001 - an unknown version must not 500 the probe
+        return "unknown"
+
+
+@router.get("/version")
+def system_version(_auth=Depends(verify_auth)):
+    """Identify the running build.
+
+    Deliberately available to any authenticated caller, not admins only: the
+    dashboard footer renders this for every role, and comparing the build the
+    dashboard was compiled from against the one the API reports is how a
+    half-finished deploy gets noticed.
+    """
+    return {
+        "version": settings.APP_VERSION,
+        "git_sha": settings.GIT_SHA,
+        "built_at": settings.BUILT_AT,
+        "python": platform.python_version(),
+        "mem0_core": _core_version(),
+        "started_at": datetime.fromtimestamp(PROCESS_STARTED_AT, tz=timezone.utc).isoformat(),
+        "uptime_seconds": int(time.time() - PROCESS_STARTED_AT),
     }
 
 

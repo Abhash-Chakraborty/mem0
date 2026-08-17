@@ -1,5 +1,11 @@
 FROM node:20-bookworm-slim AS dashboard-builder
 
+# Build identity. Declared before the first FROM would make it global, but both
+# stages need it and each must re-declare, so it is set per stage instead.
+ARG APP_VERSION=dev
+ARG GIT_SHA=unknown
+ARG BUILT_AT=unknown
+
 WORKDIR /app
 COPY dashboard/package.json dashboard/pnpm-lock.yaml dashboard/pnpm-workspace.yaml ./
 RUN corepack enable pnpm && pnpm install --frozen-lockfile
@@ -7,9 +13,20 @@ COPY dashboard/ ./
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_API_URL=NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_INSTANCE_NAME=NEXT_PUBLIC_INSTANCE_NAME
+# Inlined by Next at build time; not runtime-substituted, unlike the two above.
+ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION} \
+    NEXT_PUBLIC_GIT_SHA=${GIT_SHA} \
+    NEXT_PUBLIC_BUILT_AT=${BUILT_AT}
 RUN pnpm run build
 
 FROM python:3.12-bookworm AS runtime
+
+ARG APP_VERSION=dev
+ARG GIT_SHA=unknown
+ARG BUILT_AT=unknown
+ENV APP_VERSION=${APP_VERSION} \
+    GIT_SHA=${GIT_SHA} \
+    BUILT_AT=${BUILT_AT}
 
 ENV PYTHONUNBUFFERED=1
 ENV NEXT_TELEMETRY_DISABLED=1

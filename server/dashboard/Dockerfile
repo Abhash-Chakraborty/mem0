@@ -23,6 +23,16 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_PUBLIC_API_URL=NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_INSTANCE_NAME=NEXT_PUBLIC_INSTANCE_NAME
 
+# Build identity. Unlike the two above these are NOT runtime-substituted: the
+# whole point is to record the commit this bundle was compiled from, so they
+# are inlined by Next at build time and never rewritten afterwards.
+ARG APP_VERSION=dev
+ARG GIT_SHA=unknown
+ARG BUILT_AT=unknown
+ENV NEXT_PUBLIC_APP_VERSION=${APP_VERSION} \
+    NEXT_PUBLIC_GIT_SHA=${GIT_SHA} \
+    NEXT_PUBLIC_BUILT_AT=${BUILT_AT}
+
 RUN npm run build
 
 # Production

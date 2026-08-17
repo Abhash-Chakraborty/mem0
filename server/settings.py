@@ -10,6 +10,15 @@ with another.
 
 import os
 
+# --- Build identity ---------------------------------------------------------
+
+# Baked in at image build time via Docker build args, never read from a file at
+# runtime: a running container must report the commit it was built from, not
+# whatever happens to be checked out in a mounted working tree.
+APP_VERSION = os.environ.get("APP_VERSION", "dev")
+GIT_SHA = os.environ.get("GIT_SHA", "unknown")
+BUILT_AT = os.environ.get("BUILT_AT", "unknown")
+
 # --- Models -----------------------------------------------------------------
 
 DEFAULT_LLM_MODEL = os.environ.get("MEM0_DEFAULT_LLM_MODEL", "gpt-5.4-nano")
