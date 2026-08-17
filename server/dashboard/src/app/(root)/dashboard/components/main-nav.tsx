@@ -12,10 +12,10 @@ import {
   HeartPulse,
   KeyRound,
   LayoutDashboard,
+  Moon,
   ScrollText,
   Settings,
   Share2,
-  Tags,
   Users,
   WebhookIcon,
   Wrench,
@@ -45,6 +45,18 @@ interface NavItem {
   title: string;
   url: string;
   icon: LucideIcon;
+  /** Path prefix that also counts as this item being active. */
+  section?: string;
+  /** Small marker for a newly-added surface. */
+  badge?: string;
+}
+
+// Settings is seven pages behind a sub-nav, so the sidebar entry has to stay
+// lit across all of them - an exact path match would go dark the moment you
+// clicked anything inside.
+function isActive(pathname: string, item: NavItem): boolean {
+  if (item.section) return pathname.startsWith(item.section);
+  return pathname === item.url;
 }
 
 // The three groups previously repeated the same twenty-line menu-item block,
@@ -57,24 +69,33 @@ const ACTIVITY_ITEMS: NavItem[] = [
   { title: "Entities", url: "/dashboard/entities", icon: Users },
   { title: "Graph", url: "/dashboard/graph", icon: Share2 },
   { title: "Recall", url: "/dashboard/recall", icon: FlaskConical },
+  { title: "Dream", url: "/dashboard/dream", icon: Moon, badge: "NEW" },
 ];
 
 const TOOL_ITEMS: NavItem[] = [
-  { title: "Categories", url: "/dashboard/categories", icon: Tags },
   { title: "Webhooks", url: "/dashboard/webhooks", icon: WebhookIcon },
   { title: "Export", url: "/dashboard/export", icon: FolderInput },
 ];
 
+// Configuration lives here rather than under ACCOUNT: LLM and embedder
+// providers are instance-wide, not per-account and not per-project.
 const OPERATIONS_ITEMS: NavItem[] = [
   { title: "Health", url: "/dashboard/health", icon: HeartPulse },
   { title: "Backups", url: "/dashboard/backups", icon: Archive },
   { title: "Logs", url: "/dashboard/logs", icon: ScrollText },
+  { title: "Configuration", url: "/dashboard/configuration", icon: Wrench },
 ];
 
+// Categories moved into settings when they became project-scoped, so this
+// group is now the two things that are genuinely about your account.
 const ACCOUNT_ITEMS: NavItem[] = [
   { title: "API Keys", url: "/dashboard/api-keys", icon: KeyRound },
-  { title: "Configuration", url: "/dashboard/configuration", icon: Wrench },
-  { title: "Settings", url: "/dashboard/settings", icon: Settings },
+  {
+    title: "Settings",
+    url: "/dashboard/settings/general",
+    icon: Settings,
+    section: "/dashboard/settings",
+  },
 ];
 
 function NavLink({
@@ -102,7 +123,16 @@ function NavLink({
           )}
         >
           <item.icon className="size-4 shrink-0" />
-          {!collapsed && <span>{item.title}</span>}
+          {!collapsed && (
+            <>
+              <span>{item.title}</span>
+              {item.badge && (
+                <span className="ml-auto rounded bg-surface-default-tertiary px-1 text-[9px] font-medium tracking-wide text-onSurface-default-tertiary">
+                  {item.badge}
+                </span>
+              )}
+            </>
+          )}
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>
@@ -122,13 +152,15 @@ function NavGroup({
 }) {
   return (
     <div className="flex flex-col gap-0">
-      {!collapsed && <SidebarGroupLabel className="mb-0">{label}</SidebarGroupLabel>}
+      {!collapsed && (
+        <SidebarGroupLabel className="mb-0">{label}</SidebarGroupLabel>
+      )}
       {items.map((item) => (
         <NavLink
           key={item.title}
           item={item}
           collapsed={collapsed}
-          active={pathname === item.url}
+          active={isActive(pathname, item)}
         />
       ))}
     </div>
@@ -192,7 +224,7 @@ export function MainNav({
                       key={item.title}
                       item={item}
                       collapsed={isSidebarCollapsed}
-                      active={pathname === item.url}
+                      active={isActive(pathname, item)}
                     />
                   ))}
                 </CollapsibleContent>

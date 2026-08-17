@@ -3,6 +3,26 @@ import axios, { AxiosError, AxiosInstance } from "axios";
 let cachedToken: string | null = null;
 const LOGIN_PATH = "/login";
 
+export const ORG_HEADER = "X-Mem0-Org";
+export const PROJECT_HEADER = "X-Mem0-Project";
+
+// The active org/project ride on every request from here rather than being
+// threaded through each caller. A page that forgot to pass them would silently
+// read the default project instead of the one on screen, and nothing in the
+// response would say so.
+let activeOrg: string | null = null;
+let activeProject: string | null = null;
+
+export const setActiveScope = (org: string | null, project: string | null) => {
+  activeOrg = org;
+  activeProject = project;
+};
+
+export const getActiveScope = () => ({
+  org: activeOrg,
+  project: activeProject,
+});
+
 export const setAccessToken = (token: string | null) => {
   cachedToken = token;
 };
@@ -46,6 +66,11 @@ const createApi = (): AxiosInstance => {
       if (cachedToken) {
         config.headers = config.headers ?? {};
         config.headers.Authorization = `Bearer ${cachedToken}`;
+      }
+      if (activeOrg || activeProject) {
+        config.headers = config.headers ?? {};
+        if (activeOrg) config.headers[ORG_HEADER] = activeOrg;
+        if (activeProject) config.headers[PROJECT_HEADER] = activeProject;
       }
       return config;
     },

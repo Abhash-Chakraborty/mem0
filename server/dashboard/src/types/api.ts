@@ -1,3 +1,25 @@
+/**
+ * What has happened to a memory beyond existing.
+ *
+ * Always present on a memory from the API, even when nothing has happened —
+ * the server fills in `active` rather than omitting the key, so the client
+ * never has to tell "active" from "we did not look".
+ */
+export interface MemoryLifecycle {
+  state: "active" | "superseded" | "merged" | "pattern" | "expired";
+  superseded_by: string | null;
+  merged_into: string | null;
+  reason: string | null;
+  actor: string | null;
+  changed_at: string | null;
+}
+
+export interface MemoryAccess {
+  count: number;
+  last_access_at: string | null;
+  first_access_at: string | null;
+}
+
 export interface Memory {
   id: string;
   memory: string;
@@ -6,6 +28,9 @@ export interface Memory {
   run_id?: string;
   metadata?: Record<string, unknown>;
   categories?: MemoryCategory[];
+  lifecycle?: MemoryLifecycle;
+  /** Only returned when fetching a single memory. */
+  access?: MemoryAccess;
   created_at?: string;
   updated_at?: string;
 }
@@ -51,6 +76,8 @@ export interface GraphNode {
   label: string;
   type: string;
   memories: number;
+  /** Precomputed server-side; absent on responses from older server builds. */
+  degree?: number;
 }
 
 export interface GraphEdge {
@@ -72,6 +99,10 @@ export interface GraphResponse {
   detail?: string | null;
   source?: string;
   entity_extraction_available?: boolean;
+  /** True when the server had more nodes than it returned. */
+  truncated?: boolean;
+  /** How many nodes exist in total, so the UI can say what is missing. */
+  total_nodes?: number;
 }
 
 export interface Category {

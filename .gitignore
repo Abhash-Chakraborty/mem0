@@ -191,8 +191,3 @@ qdrant_storage/
 .crossnote
 testing.ipynb
 .weave/
-
-# Local scratch: the Mem0 docs dump used as a reference while building the
-# self-hosted server. 1.6MB of vendored documentation that does not belong in
-# the repository.
-/data.txt

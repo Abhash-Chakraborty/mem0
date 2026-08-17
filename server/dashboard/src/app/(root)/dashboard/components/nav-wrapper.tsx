@@ -1,7 +1,14 @@
 "use client";
 
 import { MainNav } from "./main-nav";
-import { PanelRight, LogOut, Settings, HelpCircle } from "lucide-react";
+import {
+  PanelRight,
+  LogOut,
+  Settings,
+  HelpCircle,
+  UserRound,
+  Users,
+} from "lucide-react";
 import { useCallback } from "react";
 import {
   COLLAPSED_SIDEBAR_WIDTH,
@@ -10,10 +17,14 @@ import {
 } from "../../clientLayout";
 import { useDispatch, useSelector } from "react-redux";
 import { cn } from "@/lib/utils";
-import { INSTANCE_NAME } from "@/lib/instance";
 import { RootState } from "@/store/store";
 import { toggleSidebar } from "@/store/reducers/layoutReducer";
 import { useAuth } from "@/hooks/use-auth";
+import { useScope } from "@/lib/scope";
+import { BuildBadge } from "@/components/shared/build-badge";
+import { ThemeSegmented } from "@/components/shared/theme-segmented";
+import { OrgSwitcher } from "@/components/tenancy/org-switcher";
+import { ProjectSwitcher } from "@/components/tenancy/project-switcher";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +38,6 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import Link from "next/link";
-import { Building2 } from "lucide-react";
 
 export default function NavWrapper() {
   const dispatch = useDispatch();
@@ -35,8 +45,7 @@ export default function NavWrapper() {
     (state: RootState) => state.layout.isSidebarCollapsed,
   );
   const { user, logout } = useAuth();
-
-  const instanceName = INSTANCE_NAME;
+  const { scope, can } = useScope();
 
   const handleToggle = useCallback(() => {
     dispatch(toggleSidebar());
@@ -57,21 +66,7 @@ export default function NavWrapper() {
               isSidebarCollapsed ? "p-0 justify-center" : "",
             )}
           >
-            <div
-              className={cn(
-                "flex items-center w-full",
-                isSidebarCollapsed ? "justify-center" : "gap-2",
-              )}
-            >
-              <div className="flex items-center justify-center size-7 rounded-md bg-surface-default-tertiary shrink-0">
-                <Building2 className="size-4 text-onSurface-default-primary" />
-              </div>
-              {!isSidebarCollapsed && (
-                <span className="typo-body-xs text-onSurface-default-primary truncate text-left flex-1 min-w-0">
-                  {instanceName}
-                </span>
-              )}
-            </div>
+            <OrgSwitcher collapsed={isSidebarCollapsed} />
           </div>
 
           <MainNav className="w-full" />
@@ -79,6 +74,9 @@ export default function NavWrapper() {
 
         {!isSidebarCollapsed && (
           <div className="flex flex-col shrink-0">
+            <div className="mx-3 px-0 pt-3">
+              <BuildBadge />
+            </div>
             <div className="mx-3 px-0 py-3 border-t border-memBorder-primary">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -108,6 +106,18 @@ export default function NavWrapper() {
                     <p className="typo-body-xs text-onSurface-default-tertiary">
                       {user?.email}
                     </p>
+                    {scope && (
+                      <p className="typo-caption-sm text-onSurface-default-tertiary mt-1">
+                        {scope.role} in {scope.org_name}
+                      </p>
+                    )}
+                  </div>
+                  <DropdownMenuSeparator className="bg-memBorder-primary" />
+                  {/* Theme sits in the menu rather than in the top bar: it is
+                      set once and then forgotten, so it does not earn permanent
+                      chrome next to controls used on every visit. */}
+                  <div className="px-2 py-1.5">
+                    <ThemeSegmented />
                   </div>
                   <DropdownMenuSeparator className="bg-memBorder-primary" />
                   <DropdownMenuItem
@@ -115,10 +125,32 @@ export default function NavWrapper() {
                     className="typo-body-sm text-onSurface-default-primary hover:bg-surface-default-tertiary-hover focus:bg-surface-default-tertiary-hover cursor-pointer"
                   >
                     <Link href="/dashboard/settings">
-                      <Settings className="size-4 mr-2" />
-                      Settings
+                      <UserRound className="size-4 mr-2" />
+                      Your profile
                     </Link>
                   </DropdownMenuItem>
+                  {can("admin") && (
+                    <DropdownMenuItem
+                      asChild
+                      className="typo-body-sm text-onSurface-default-primary hover:bg-surface-default-tertiary-hover focus:bg-surface-default-tertiary-hover cursor-pointer"
+                    >
+                      <Link href="/dashboard/settings/members">
+                        <Users className="size-4 mr-2" />
+                        Members &amp; access
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
+                  {can("admin") && (
+                    <DropdownMenuItem
+                      asChild
+                      className="typo-body-sm text-onSurface-default-primary hover:bg-surface-default-tertiary-hover focus:bg-surface-default-tertiary-hover cursor-pointer"
+                    >
+                      <Link href="/dashboard/settings/general">
+                        <Settings className="size-4 mr-2" />
+                        Project settings
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator className="bg-memBorder-primary" />
                   <DropdownMenuItem
                     onClick={logout}
@@ -141,7 +173,7 @@ export default function NavWrapper() {
           left: `${isSidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH_WITHOUT_PADDING + 12 : SIDEBAR_WIDTH + 12}px`,
         }}
       >
-        <div className="flex items-center">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={handleToggle}
@@ -152,6 +184,7 @@ export default function NavWrapper() {
           >
             <PanelRight className="size-4" />
           </button>
+          <ProjectSwitcher />
         </div>
 
         <div className="flex items-center gap-3">

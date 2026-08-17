@@ -5,6 +5,10 @@ services:
     build:
       context: ..
       dockerfile: server/dev.Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_SHA: ${GIT_SHA:-unknown}
+        BUILT_AT: ${BUILT_AT:-unknown}
     ports:
       - "8888:8000"
     env_file:
@@ -51,7 +55,12 @@ services:
         - "8432:5432"
 
   mem0-dashboard:
-    build: ./dashboard
+    build:
+      context: ./dashboard
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_SHA: ${GIT_SHA:-unknown}
+        BUILT_AT: ${BUILT_AT:-unknown}
     ports:
       - "3000:3000"
     networks:
