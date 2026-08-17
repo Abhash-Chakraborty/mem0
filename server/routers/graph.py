@@ -24,10 +24,13 @@ import logging
 from collections import defaultdict
 from typing import Any, Literal, Optional
 
-from auth import verify_auth
-from fastapi import APIRouter, Depends, Query
+import graph_services
+from db import get_db
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from server_state import get_memory_instance
+from sqlalchemy.orm import Session
+from tenancy import Scope, require_role, require_scope
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,9 @@ class GraphNode(BaseModel):
     label: str
     type: str
     memories: int = 0
+    # Precomputed server-side: the client would otherwise walk every edge to
+    # size a node, which is the O(n*e) pass that made this page slow.
+    degree: int = 0
 
 
 class GraphEdge(BaseModel):
@@ -67,6 +73,10 @@ class GraphResponse(BaseModel):
     detail: Optional[str] = None
     source: str = GRAPH_SOURCE
     entity_extraction_available: bool = True
+    # A count rather than a bare flag: "showing 2,000 of 8,412" tells the reader
+    # what they are missing, which "truncated" does not.
+    truncated: bool = False
+    total_nodes: int = 0
 
 
 def _scope_filters(user_id: Optional[str], agent_id: Optional[str], run_id: Optional[str]) -> dict[str, str]:
@@ -123,10 +133,53 @@ def get_graph(
     agent_id: Optional[str] = None,
     run_id: Optional[str] = None,
     limit: int = Query(SCAN_LIMIT, ge=1, le=SCAN_LIMIT),
-    _auth=Depends(verify_auth),
+    min_degree: int = Query(0, ge=0, le=100),
+    q: Optional[str] = Query(None, description="Filter nodes by label."),
+    refresh: bool = Query(False, description="Force a rebuild before reading."),
+    scope: Scope = Depends(require_scope),
+    db: Session = Depends(get_db),
 ):
+    """The project's entity graph.
+
+    Served from the materialized tables when they are warm, which is the whole
+    point of phase 09 - the previous implementation rescanned the entity store
+    and recomputed every edge on each request.
+
+    An unscoped read is the materialized path. An entity-scoped one still
+    derives live: the materialized graph is per project, and slicing it to one
+    user would need a second set of tables for a query that is far rarer than
+    the whole-project view.
+    """
     extraction_available = _entity_extraction_available()
-    rows, error = _list_entities(_scope_filters(user_id, agent_id, run_id), limit)
+    filters = _scope_filters(user_id, agent_id, run_id)
+
+    if not filters:
+        try:
+            if refresh or graph_services.is_stale(db, scope.project_id):
+                rows, error = _list_entities({}, graph_services.SCAN_LIMIT)
+                if error is None:
+                    graph_services.rebuild_project(db, scope.project_id, rows)
+
+            materialized = graph_services.read(
+                db, scope.project_id, limit=limit, min_degree=min_degree, query=q
+            )
+            if materialized["materialized"]:
+                return GraphResponse(
+                    nodes=[GraphNode(**n) for n in materialized["nodes"]],
+                    edges=[GraphEdge(**e) for e in materialized["edges"]],
+                    status="ok",
+                    detail=None,
+                    source=GRAPH_SOURCE,
+                    entity_extraction_available=extraction_available,
+                    truncated=materialized["truncated"],
+                    total_nodes=materialized["total_nodes"],
+                )
+        except Exception:
+            # A cache that fails must fall through to the source of truth, not
+            # take the page down with it.
+            logger.warning("Materialized graph read failed; deriving live", exc_info=True)
+
+    rows, error = _list_entities(filters, limit)
 
     nodes: dict[str, GraphNode] = {}
     memory_to_entities: dict[str, list[str]] = defaultdict(list)
@@ -192,3 +245,53 @@ def _classify(
             "not installed), so no graph can be built from your memories.",
         )
     return "empty", "No entities have been extracted from your memories yet."
+
+
+@router.get("/nodes/{node_key:path}", response_model=GraphResponse)
+def get_neighbourhood(
+    node_key: str,
+    depth: int = Query(1, ge=1, le=2),
+    scope: Scope = Depends(require_scope),
+    db: Session = Depends(get_db),
+):
+    """The subgraph around one node, for click-to-explore.
+
+    Separate from the main read because expanding a node should cost a small
+    query, not a re-fetch of the whole graph with a client-side filter.
+    """
+    try:
+        result = graph_services.neighbourhood(db, scope.project_id, node_key, depth)
+    except Exception:
+        raise HTTPException(status_code=503, detail="The graph could not be read.")
+
+    if not result["nodes"]:
+        raise HTTPException(status_code=404, detail="Node not found in the graph.")
+
+    return GraphResponse(
+        nodes=[GraphNode(**n) for n in result["nodes"]],
+        edges=[GraphEdge(**e) for e in result["edges"]],
+        status="ok",
+        source=GRAPH_SOURCE,
+        entity_extraction_available=True,
+        truncated=False,
+        total_nodes=result["total_nodes"],
+    )
+
+
+@router.post("/rebuild")
+def rebuild_graph(
+    scope: Scope = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Rebuild this project's materialized graph from the entity store.
+
+    The repair hatch. The graph is a cache, so this exists for the case where
+    it has drifted - and it is a plain rebuild rather than a diff because the
+    whole computation is cheap enough to just redo.
+    """
+    rows, error = _list_entities({}, graph_services.SCAN_LIMIT)
+    if error:
+        raise HTTPException(status_code=503, detail=f"The entity store could not be read: {error}")
+
+    counts = graph_services.rebuild_project(db, scope.project_id, rows)
+    return {"rebuilt": True, **counts}
