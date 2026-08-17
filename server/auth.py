@@ -123,7 +123,7 @@ def _resolve_user_from_jwt(token: str, db: Session) -> User:
     return user
 
 
-def _resolve_user_from_api_key(key: str, db: Session) -> User:
+def _resolve_user_from_api_key(key: str, db: Session, request: Request | None = None) -> User:
     prefix = key[:12] if len(key) >= 12 else key
     candidates = (
         db.execute(select(APIKey).where(APIKey.key_prefix == prefix, APIKey.revoked_at.is_(None))).scalars().all()
@@ -136,6 +136,13 @@ def _resolve_user_from_api_key(key: str, db: Session) -> User:
             user = db.get(User, candidate.created_by)
             if user is None:
                 raise HTTPException(status_code=401, detail="API key owner not found.")
+            if request is not None:
+                # The key carries the project binding, so tenancy resolution
+                # needs the key itself and not just its owner. Only the id is
+                # stashed: the ORM object belongs to a session that closes when
+                # this function returns, and touching it later would raise
+                # DetachedInstanceError.
+                request.state.api_key_project_id = candidate.project_id
             return user
 
     raise HTTPException(status_code=401, detail="Invalid API key.")
@@ -162,7 +169,7 @@ async def verify_auth(
             return None
         _mark_auth_type(request, "api_key")
         with SessionLocal() as db:
-            return _resolve_user_from_api_key(x_api_key, db)
+            return _resolve_user_from_api_key(x_api_key, db, request)
 
     if AUTH_DISABLED:
         _mark_auth_type(request, "disabled")

@@ -9,6 +9,7 @@ import { Inter, InterDisplay, Roboto, Fustat, DMMono } from "./fonts";
 import { Provider } from "react-redux";
 import store from "@/store/store";
 import { AuthProvider } from "@/lib/auth";
+import { ScopeProvider } from "@/lib/scope";
 import dynamic from "next/dynamic";
 
 const Toaster = dynamic(
@@ -38,10 +39,14 @@ export function DashboardClientLayout({
       >
         <Provider store={store}>
           <AuthProvider>
-            <ThemeProvider>
-              <ClientLayout>{children}</ClientLayout>
-              <Toaster />
-            </ThemeProvider>
+            {/* Inside AuthProvider: /scope needs a bearer token, so resolving
+                scope before the session exists would always 401. */}
+            <ScopeProvider>
+              <ThemeProvider>
+                <ClientLayout>{children}</ClientLayout>
+                <Toaster />
+              </ThemeProvider>
+            </ScopeProvider>
           </AuthProvider>
         </Provider>
       </body>
