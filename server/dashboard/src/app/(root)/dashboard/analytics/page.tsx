@@ -1,454 +1,549 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { format, subDays } from "date-fns";
-import type { DateRange } from "react-day-picker";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { format } from "date-fns";
+import { ArrowRight, RefreshCw } from "lucide-react";
 import {
   Area,
+  AreaChart,
   CartesianGrid,
-  Cell,
-  ComposedChart,
-  Line,
-  Pie,
-  PieChart,
   ResponsiveContainer,
-  Tooltip as RechartsTooltip,
+  Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  CalendarDays,
-  Database,
-  Gauge,
-  PlusCircle,
-  RefreshCw,
-  Search,
-  Users,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { TableSkeleton } from "@/components/shared/table-skeleton";
-import { EmptyState } from "@/components/self-hosted/empty-state";
-import { useApiQuery } from "@/hooks/use-api-query";
+import { toast } from "sonner";
 import { api } from "@/utils/api";
 import { ANALYTICS_ENDPOINTS } from "@/utils/api-endpoints";
-import { AnalyticsSummary } from "@/types/api";
+import { getErrorMessage } from "@/lib/error-message";
+import { useScope } from "@/lib/scope";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip as UiTooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { EmptyState } from "@/components/self-hosted/empty-state";
 
-const PRESETS = [
-  { key: "all", label: "All Time" },
-  { key: "1d", label: "1d" },
-  { key: "7d", label: "7d" },
-  { key: "30d", label: "30d" },
+interface SeriesPoint {
+  date: string;
+  counts: Record<string, number>;
+  total: number;
+}
+
+interface Overview {
+  total_memories: number;
+  active_entities: number;
+  retrieval_events: number;
+  add_events: number;
+  categorized_memories: number;
+  lifecycle_counts: Record<string, number>;
+  requests_series: SeriesPoint[];
+  entities_series: SeriesPoint[];
+  category_distribution: { name: string; color: string; count: number }[];
+  range: string;
+}
+
+const RANGES = [
+  { id: "all", label: "All time" },
+  { id: "1d", label: "1d" },
+  { id: "7d", label: "7d" },
+  { id: "30d", label: "30d" },
+  { id: "90d", label: "90d" },
 ] as const;
 
-const ENTITY_COLORS: Record<string, string> = {
-  user: "#0ea5e9",
-  agent: "#ef4444",
-  run: "#f59e0b",
-  app: "#8b5cf6",
+/**
+ * A stat card's definition, shown on hover. "Retrieval event" is not
+ * self-evident, and a number nobody can define is a number nobody trusts.
+ */
+const DEFINITIONS: Record<string, string> = {
+  "Total memories":
+    "Every memory in this project, regardless of the selected range.",
+  "Active entities":
+    "Users, agents and sessions that had a memory recorded in this range.",
+  "Retrieval events":
+    "Searches and reads — one per search, get, or list request.",
+  "Add events": "Requests that wrote memories.",
 };
 
-export default function DashboardPage() {
-  const [range, setRange] = useState<string>("all");
-  const [customRange, setCustomRange] = useState<DateRange | undefined>();
-  const [draftRange, setDraftRange] = useState<DateRange | undefined>();
-  const [pickerOpen, setPickerOpen] = useState(false);
+const SERIES_COLORS: Record<string, string> = {
+  add: "#6D4AFF",
+  search: "#3B9EFF",
+  get_all: "#26B47F",
+  get: "#8FBF3F",
+  update: "#E0A94A",
+  delete: "#E0674A",
+  delete_all: "#C24A6B",
+  other: "#8C8AA0",
+  user: "#6D4AFF",
+  agent: "#3B9EFF",
+  session: "#26B47F",
+  total: "#6D4AFF",
+};
 
-  const queryParams = useMemo(() => {
-    if (range === "custom" && customRange?.from) {
-      const from = format(customRange.from, "yyyy-MM-dd");
-      const to = format(customRange.to ?? customRange.from, "yyyy-MM-dd");
-      return { start: from, end: to } as Record<string, string>;
-    }
-    return { range } as Record<string, string>;
-  }, [range, customRange]);
-
-  const { data, isLoading, refetch } = useApiQuery<AnalyticsSummary>(
-    async () =>
-      (await api.get(ANALYTICS_ENDPOINTS.BASE, { params: queryParams })).data,
-    {
-      errorToast: "Failed to load dashboard",
-      deps: [JSON.stringify(queryParams)],
-    },
+function StatCard({
+  label,
+  value,
+  loading,
+}: {
+  label: string;
+  value: number;
+  loading: boolean;
+}) {
+  return (
+    <Card>
+      <CardContent className="py-4">
+        <UiTooltip>
+          <TooltipTrigger asChild>
+            <div className="cursor-help typo-caption-sm uppercase tracking-wide text-onSurface-default-tertiary">
+              {label}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs">
+            {DEFINITIONS[label]}
+          </TooltipContent>
+        </UiTooltip>
+        {loading ? (
+          <Skeleton className="mt-2 h-7 w-20" />
+        ) : (
+          <div className="mt-1 typo-heading-md tabular-nums text-onSurface-default-primary">
+            {value.toLocaleString()}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
+}
 
-  const entityPie = useMemo(() => {
-    if (!data) return [];
-    return (["user", "agent", "run", "app"] as const)
-      .map((type) => ({
-        name: type,
-        value: data.entities_by_type?.[type] ?? 0,
-      }))
-      .filter((item) => item.value > 0);
-  }, [data]);
-
-  const chartData = useMemo(
-    () =>
-      (data?.series ?? []).map((point) => ({
-        ...point,
-        label: point.date.slice(5),
-      })),
-    [data],
-  );
-
-  const rangeLabel =
-    range === "custom" && customRange?.from
-      ? `${format(customRange.from, "MMM d")} – ${format(
-          customRange.to ?? customRange.from,
-          "MMM d",
-        )}`
-      : "Pick a date range";
-
-  const stats = data
-    ? [
-        {
-          label: "Total Memories",
-          value: data.total_memories,
-          icon: Database,
-          color: "text-violet-500",
-        },
-        {
-          label: "Requests",
-          value: data.total_requests,
-          icon: Gauge,
-          color: "text-emerald-500",
-        },
-        {
-          label: "Retrieval Events",
-          value: data.retrieval_events,
-          icon: Search,
-          color: "text-sky-500",
-        },
-        {
-          label: "Add Events",
-          value: data.add_events,
-          icon: PlusCircle,
-          color: "text-amber-500",
-        },
-      ]
-    : [];
+function ChartTooltip({ active, payload, label, daily }: any) {
+  if (!active || !payload?.length) return null;
+  const rows = payload.filter((p: any) => p.value > 0);
+  if (rows.length === 0) return null;
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="rounded-md border border-memBorder-secondary bg-surface-default-primary px-3 py-2 shadow-lg">
+      <div className="typo-caption-sm text-onSurface-default-tertiary">
+        {format(new Date(label), daily ? "d MMM yyyy" : "d MMM, HH:mm")}
+      </div>
+      {rows.map((row: any) => (
+        <div
+          key={row.dataKey}
+          className="mt-1 flex items-center gap-2 typo-body-sm"
+        >
+          <span
+            aria-hidden
+            className="size-2 rounded-full"
+            style={{ backgroundColor: row.color }}
+          />
+          <span className="text-onSurface-default-secondary">{row.name}</span>
+          <span className="ml-auto tabular-nums text-onSurface-default-primary">
+            {row.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SeriesPanel({
+  title,
+  href,
+  total,
+  series,
+  daily,
+  loading,
+}: {
+  title: string;
+  href: string;
+  total: number;
+  series: SeriesPoint[];
+  daily: boolean;
+  loading: boolean;
+}) {
+  const [breakdown, setBreakdown] = useState(false);
+
+  const keys = useMemo(() => {
+    const seen = new Set<string>();
+    for (const point of series)
+      for (const key of Object.keys(point.counts)) seen.add(key);
+    return [...seen].sort();
+  }, [series]);
+
+  const data = useMemo(
+    () =>
+      series.map((point) => ({
+        date: point.date,
+        total: point.total,
+        ...point.counts,
+      })),
+    [series],
+  );
+
+  const shown = breakdown ? keys : ["total"];
+
+  return (
+    <Card>
+      <CardContent className="py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="typo-caption-sm uppercase tracking-wide text-onSurface-default-tertiary">
+              {title}
+            </div>
+            {loading ? (
+              <Skeleton className="mt-1 h-7 w-24" />
+            ) : (
+              <div className="mt-0.5 typo-heading-sm tabular-nums text-onSurface-default-primary">
+                {total.toLocaleString()}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {keys.length > 1 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setBreakdown((v) => !v)}
+                aria-pressed={breakdown}
+              >
+                {breakdown ? "Combine" : "View breakdown"}
+              </Button>
+            )}
+            <Link
+              href={href}
+              className="flex items-center gap-1 typo-body-sm text-onSurface-default-secondary hover:text-onSurface-default-primary"
+            >
+              View
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-3 h-[180px]">
+          {loading ? (
+            <Skeleton className="size-full" />
+          ) : data.length === 0 ? (
+            <div className="grid size-full place-items-center typo-body-sm text-onSurface-default-tertiary">
+              Nothing in this range.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={data}
+                margin={{ top: 4, right: 4, bottom: 0, left: -20 }}
+              >
+                <defs>
+                  {shown.map((key) => (
+                    <linearGradient
+                      key={key}
+                      id={`fill-${title}-${key}`}
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="0%"
+                        stopColor={SERIES_COLORS[key] ?? SERIES_COLORS.other}
+                        stopOpacity={0.28}
+                      />
+                      <stop
+                        offset="100%"
+                        stopColor={SERIES_COLORS[key] ?? SERIES_COLORS.other}
+                        stopOpacity={0.02}
+                      />
+                    </linearGradient>
+                  ))}
+                </defs>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="currentColor"
+                  opacity={0.12}
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={(value) =>
+                    format(new Date(value), daily ? "d MMM" : "HH:mm")
+                  }
+                  tick={{ fontSize: 11 }}
+                  stroke="currentColor"
+                  opacity={0.45}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  stroke="currentColor"
+                  opacity={0.45}
+                  tickLine={false}
+                  axisLine={false}
+                  allowDecimals={false}
+                  width={40}
+                />
+                <Tooltip content={<ChartTooltip daily={daily} />} />
+                {shown.map((key) => (
+                  <Area
+                    key={key}
+                    type="monotone"
+                    dataKey={key}
+                    name={key === "total" ? title : key.replace("_", " ")}
+                    stroke={SERIES_COLORS[key] ?? SERIES_COLORS.other}
+                    strokeWidth={1.5}
+                    fill={`url(#fill-${title}-${key})`}
+                    stackId={breakdown ? "1" : undefined}
+                    dot={false}
+                    activeDot={{ r: 3 }}
+                  />
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AnalyticsInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { scope } = useScope();
+
+  // The range lives in the URL, so a link to "the last 30 days" is a real link.
+  const range = searchParams.get("range") ?? "7d";
+  const [data, setData] = useState<Overview | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const setRange = (next: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("range", next);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get<Overview>(ANALYTICS_ENDPOINTS.BASE, {
+        params: { range },
+      });
+      setData(res.data);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Could not load the dashboard."));
+    } finally {
+      setLoading(false);
+    }
+  }, [range]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const daily = range !== "1d";
+  const totalCategorised = data?.categorized_memories ?? 0;
+  const isFresh = !loading && data !== null && data.total_memories === 0;
+
+  return (
+    <div className="space-y-4 p-6">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold font-fustat">Dashboard</h1>
-          <p className="text-sm text-onSurface-default-secondary mt-1">
-            Memories, requests, and entities at a glance.
+          <h1 className="typo-heading-md text-onSurface-default-primary">
+            Dashboard
+          </h1>
+          <p className="typo-body-sm text-onSurface-default-tertiary">
+            {scope ? `${scope.project_name} · ${scope.org_name}` : "Overview"}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={refetch} disabled={isLoading}>
-          <RefreshCw className="size-4 mr-2" />
-          Refresh
-        </Button>
-      </div>
-
-      {/* Date range controls */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className={cn(
-                "gap-2",
-                range === "custom" && "border-memPurple-400 text-memPurple-500",
-              )}
-              onClick={() => setDraftRange(customRange)}
-            >
-              <CalendarDays className="size-4" />
-              {rangeLabel}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="range"
-              numberOfMonths={2}
-              selected={draftRange}
-              onSelect={setDraftRange}
-              defaultMonth={subDays(new Date(), 30)}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0.5 rounded-md border border-memBorder-primary p-0.5">
+            {RANGES.map((option) => (
+              <button
+                key={option.id}
+                onClick={() => setRange(option.id)}
+                aria-pressed={range === option.id}
+                className={cn(
+                  "rounded px-2 py-1 typo-caption-sm transition-colors",
+                  range === option.id
+                    ? "bg-surface-default-tertiary text-onSurface-default-primary"
+                    : "text-onSurface-default-tertiary hover:text-onSurface-default-secondary",
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+            <RefreshCw
+              className={cn("mr-1.5 size-3.5", loading && "animate-spin")}
             />
-            <div className="flex items-center justify-end gap-2 border-t border-memBorder-primary p-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setDraftRange(undefined);
-                  setPickerOpen(false);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                disabled={!draftRange?.from}
-                onClick={() => {
-                  setCustomRange(draftRange);
-                  setRange("custom");
-                  setPickerOpen(false);
-                }}
-              >
-                Apply
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        <div className="flex items-center gap-1">
-          {PRESETS.map((preset) => (
-            <Button
-              key={preset.key}
-              variant="ghost"
-              size="sm"
-              className={cn(
-                "h-8",
-                range === preset.key &&
-                  "bg-surface-default-secondary text-onSurface-default-primary",
-              )}
-              onClick={() => {
-                setRange(preset.key);
-                setCustomRange(undefined);
-              }}
-            >
-              {preset.label}
-            </Button>
-          ))}
+            Refresh
+          </Button>
         </div>
-      </div>
+      </header>
 
-      {isLoading || !data ? (
-        <TableSkeleton rows={6} columns={4} />
+      {isFresh ? (
+        <EmptyState
+          title="No memories yet"
+          description="Add your first memory and this page fills in. Point a client at POST /memories with an API key, or try the Recall playground to see the shape of a request."
+        />
       ) : (
         <>
-          {/* Stat cards */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {stats.map((stat) => (
-              <Card key={stat.label} className="border-memBorder-primary">
-                <CardContent className="p-5">
-                  <div className="flex items-center gap-2 text-xs text-onSurface-default-tertiary">
-                    <stat.icon className={cn("size-4", stat.color)} />
-                    {stat.label}
-                  </div>
-                  <p className="mt-2 text-3xl font-semibold">{stat.value}</p>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              label="Total memories"
+              value={data?.total_memories ?? 0}
+              loading={loading}
+            />
+            <StatCard
+              label="Active entities"
+              value={data?.active_entities ?? 0}
+              loading={loading}
+            />
+            <StatCard
+              label="Retrieval events"
+              value={data?.retrieval_events ?? 0}
+              loading={loading}
+            />
+            <StatCard
+              label="Add events"
+              value={data?.add_events ?? 0}
+              loading={loading}
+            />
           </div>
 
-          {/* Secondary metrics */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            {[
-              { label: "Entities", value: data.entities_total },
-              { label: "Entities / Request", value: data.entities_per_request },
-              { label: "Success Rate", value: `${data.success_rate}%` },
-              { label: "Avg Latency", value: `${data.average_latency_ms} ms` },
-            ].map((stat) => (
-              <Card key={stat.label} className="border-memBorder-primary">
-                <CardContent className="p-4">
-                  <p className="text-xs text-onSurface-default-tertiary">
-                    {stat.label}
+          <div className="grid gap-3 lg:grid-cols-2">
+            <SeriesPanel
+              title="Requests"
+              href="/dashboard/requests"
+              total={(data?.retrieval_events ?? 0) + (data?.add_events ?? 0)}
+              series={data?.requests_series ?? []}
+              daily={daily}
+              loading={loading}
+            />
+            <SeriesPanel
+              title="Entities"
+              href="/dashboard/entities"
+              total={data?.active_entities ?? 0}
+              series={data?.entities_series ?? []}
+              daily={daily}
+              loading={loading}
+            />
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <Card>
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div className="typo-caption-sm uppercase tracking-wide text-onSurface-default-tertiary">
+                    Categories
+                  </div>
+                  <Link
+                    href="/dashboard/settings/categories"
+                    className="typo-caption-sm text-onSurface-default-secondary hover:text-onSurface-default-primary"
+                  >
+                    Manage
+                  </Link>
+                </div>
+                {loading ? (
+                  <Skeleton className="mt-3 h-24 w-full" />
+                ) : (data?.category_distribution.length ?? 0) === 0 ? (
+                  <p className="mt-2 typo-body-sm text-onSurface-default-tertiary">
+                    No categories defined yet.
                   </p>
-                  <p className="mt-1 text-xl font-semibold">{stat.value}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {/* Charts */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <Card className="border-memBorder-primary lg:col-span-2">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-sm">Requests over time</CardTitle>
-                <span className="text-xs text-onSurface-default-tertiary">
-                  {data.total_requests} total
-                </span>
-              </CardHeader>
-              <CardContent>
-                {chartData.length === 0 ? (
-                  <EmptyState
-                    title="No activity in this range"
-                    description="Pick a wider date range or send some API traffic."
-                  />
                 ) : (
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart
-                        data={chartData}
-                        margin={{ top: 8, right: 8, left: -20, bottom: 0 }}
-                      >
-                        <defs>
-                          <linearGradient
-                            id="reqFill"
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor="#7c3aed"
-                              stopOpacity={0.3}
-                            />
-                            <stop
-                              offset="100%"
-                              stopColor="#7c3aed"
-                              stopOpacity={0}
-                            />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          vertical={false}
-                          stroke="currentColor"
-                          className="text-memBorder-primary"
-                        />
-                        <XAxis
-                          dataKey="label"
-                          tick={{ fontSize: 11 }}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          allowDecimals={false}
-                          tick={{ fontSize: 11 }}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <RechartsTooltip
-                          contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="requests"
-                          name="Requests"
-                          stroke="#7c3aed"
-                          strokeWidth={2}
-                          fill="url(#reqFill)"
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="retrievals"
-                          name="Retrievals"
-                          stroke="#0ea5e9"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="adds"
-                          name="Adds"
-                          stroke="#f59e0b"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="border-memBorder-primary">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-sm">Entities</CardTitle>
-                <Users className="size-4 text-onSurface-default-tertiary" />
-              </CardHeader>
-              <CardContent>
-                {entityPie.length === 0 ? (
-                  <EmptyState
-                    title="No entities yet"
-                    description="Entities appear once memories carry user/agent/run ids."
-                  />
-                ) : (
-                  <div className="flex items-center gap-4">
-                    <div className="h-44 w-1/2">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={entityPie}
-                            dataKey="value"
-                            nameKey="name"
-                            innerRadius={40}
-                            outerRadius={68}
-                            paddingAngle={2}
-                          >
-                            {entityPie.map((entry) => (
-                              <Cell
-                                key={entry.name}
-                                fill={ENTITY_COLORS[entry.name] ?? "#6b7280"}
-                              />
-                            ))}
-                          </Pie>
-                          <RechartsTooltip
-                            contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="flex-1 space-y-1.5">
-                      {entityPie.map((entry) => (
+                  <div className="mt-3 flex flex-col gap-2">
+                    {data!.category_distribution.slice(0, 8).map((category) => {
+                      const max = Math.max(
+                        1,
+                        ...data!.category_distribution.map((c) => c.count),
+                      );
+                      return (
                         <div
-                          key={entry.name}
-                          className="flex items-center justify-between gap-2 text-sm"
+                          key={category.name}
+                          className="flex items-center gap-2"
                         >
-                          <span className="flex items-center gap-2 capitalize">
-                            <span
-                              className="size-2.5 rounded-full"
+                          <span className="w-28 shrink-0 truncate typo-body-sm text-onSurface-default-secondary">
+                            {category.name}
+                          </span>
+                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-default-tertiary">
+                            <div
+                              className="h-full rounded-full"
                               style={{
-                                backgroundColor:
-                                  ENTITY_COLORS[entry.name] ?? "#6b7280",
+                                width: `${(category.count / max) * 100}%`,
+                                backgroundColor: category.color,
                               }}
                             />
-                            {entry.name}
-                          </span>
-                          <span className="text-onSurface-default-secondary">
-                            {entry.value}
+                          </div>
+                          <span className="w-10 shrink-0 text-right tabular-nums typo-caption-sm text-onSurface-default-tertiary">
+                            {category.count}
                           </span>
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })}
+                    <p className="mt-1 typo-caption-sm text-onSurface-default-tertiary">
+                      {totalCategorised} memories categorised in this range.
+                    </p>
                   </div>
                 )}
               </CardContent>
             </Card>
-          </div>
 
-          {/* Category distribution */}
-          {data.category_distribution.length > 0 && (
-            <Card className="border-memBorder-primary">
-              <CardHeader>
-                <CardTitle className="text-sm">Category distribution</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-x-6 gap-y-2">
-                  {data.category_distribution.map((category) => (
-                    <div
-                      key={category.name}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <span
-                        className="size-2.5 rounded-full"
-                        style={{ backgroundColor: category.color }}
-                      />
-                      <span>{category.name}</span>
-                      <span className="text-onSurface-default-tertiary">
-                        {category.count}
-                      </span>
-                    </div>
-                  ))}
+            <Card>
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div className="typo-caption-sm uppercase tracking-wide text-onSurface-default-tertiary">
+                    Dream activity
+                  </div>
+                  <Link
+                    href="/dashboard/dream"
+                    className="typo-caption-sm text-onSurface-default-secondary hover:text-onSurface-default-primary"
+                  >
+                    View
+                  </Link>
                 </div>
+                {loading ? (
+                  <Skeleton className="mt-3 h-24 w-full" />
+                ) : Object.keys(data?.lifecycle_counts ?? {}).length === 0 ? (
+                  <p className="mt-2 typo-body-sm text-onSurface-default-tertiary">
+                    Dream has not changed any memory yet. Everything is active.
+                  </p>
+                ) : (
+                  <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
+                    {Object.entries(data!.lifecycle_counts).map(
+                      ([state, count]) => (
+                        <div
+                          key={state}
+                          className="flex items-center justify-between"
+                        >
+                          <dt className="typo-body-sm capitalize text-onSurface-default-secondary">
+                            {state}
+                          </dt>
+                          <dd className="tabular-nums typo-body-sm text-onSurface-default-primary">
+                            {count}
+                          </dd>
+                        </div>
+                      ),
+                    )}
+                  </dl>
+                )}
               </CardContent>
             </Card>
-          )}
+          </div>
         </>
       )}
     </div>
+  );
+}
+
+export default function AnalyticsPage() {
+  // useSearchParams needs a Suspense boundary above it.
+  return (
+    <Suspense fallback={<Skeleton className="m-6 h-96" />}>
+      <AnalyticsInner />
+    </Suspense>
   );
 }
