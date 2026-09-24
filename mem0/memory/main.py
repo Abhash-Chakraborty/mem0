@@ -850,6 +850,8 @@ class Memory(MemoryBase):
                 suggestion="Convert your input to a string, dictionary, or list of dictionaries."
             )
 
+        # TODO: Remove procedural-memory support in a future breaking release.
+        # Remove memory_type and its helpers from Memory and AsyncMemory together.
         if agent_id is not None and memory_type == MemoryType.PROCEDURAL.value:
             results = self._create_procedural_memory(messages, metadata=processed_metadata, prompt=prompt)
             scale_threshold_notice = detect_scale_threshold_from_add_result(self, results)
@@ -2017,6 +2019,12 @@ class Memory(MemoryBase):
             logger.error(f"Error generating procedural memory summary: {e}")
             raise
 
+        if not procedural_memory:
+            raise ValueError(
+                "The LLM returned no content for the procedural memory summary. "
+                "The model may have declined the request or returned an empty response."
+            )
+
         if metadata is None:
             raise ValueError("Metadata cannot be done for procedural memory.")
 
@@ -2496,6 +2504,8 @@ class AsyncMemory(MemoryBase):
                 suggestion="Convert your input to a string, dictionary, or list of dictionaries."
             )
 
+        # TODO: Remove procedural-memory support in a future breaking release.
+        # Remove memory_type and its helpers from Memory and AsyncMemory together.
         if agent_id is not None and memory_type == MemoryType.PROCEDURAL.value:
             results = await self._create_procedural_memory(
                 messages, metadata=processed_metadata, prompt=prompt, llm=llm
@@ -3701,10 +3711,16 @@ class AsyncMemory(MemoryBase):
             else:
                 procedural_memory = await asyncio.to_thread(self.llm.generate_response, messages=parsed_messages)
                 procedural_memory = remove_code_blocks(procedural_memory)
-        
+
         except Exception as e:
             logger.error(f"Error generating procedural memory summary: {e}")
             raise
+
+        if not procedural_memory:
+            raise ValueError(
+                "The LLM returned no content for the procedural memory summary. "
+                "The model may have declined the request or returned an empty response."
+            )
 
         if metadata is None:
             raise ValueError("Metadata cannot be done for procedural memory.")
