@@ -29,6 +29,12 @@
 .github/workflows/ts-sdk-cd.yml
 .github/workflows/ts-sdk-ci.yml
 .github/workflows/vercel-ai-cd.yml
+.github/workflows/agent-plugins-python-checks.yml
+.github/workflows/agent-plugins-typescript-checks.yml
+.github/workflows/deepseek-plugin-cd.yml
+.github/workflows/deepseek-plugin-checks.yml
+.github/workflows/mem0-strands-cd.yml
+.github/workflows/mem0-strands-checks.yml
 
 # NOTE: server/.env.example is deliberately NOT listed here. This fork owns its
 # own template (different defaults, extra variables), and docker-compose plus
